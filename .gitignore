@@ -50,3 +50,6 @@ rsconnect/
 
 # Ignore Mass Spec inputs
 *.tsv
+
+# Ignore splicing results
+splicing/results/
