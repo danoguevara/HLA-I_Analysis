@@ -1,0 +1,1 @@
+/nfs1/Bioinformatics/FLC_RU/FLC_RU_BAM/63_N2.starout.Aligned.sortedByCoord.out.bam

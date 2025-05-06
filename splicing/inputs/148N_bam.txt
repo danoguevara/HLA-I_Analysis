@@ -1,0 +1,1 @@
+/nfs1/Bioinformatics/FLC_RU/FLC_RUGC_03-2023/STAR_out/RU148_N.starout.Aligned.sortedByCoord.out.bam

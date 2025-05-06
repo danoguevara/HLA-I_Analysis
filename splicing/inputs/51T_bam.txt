@@ -1,0 +1,1 @@
+/nfs1/Bioinformatics/FLC_RU/FLC_RU_BAM/51_P4.starout.Aligned.sortedByCoord.out.bam,/nfs1/Bioinformatics/FLC_RU/FLC_RU_BAM/51_M7.starout.Aligned.sortedByCoord.out.bam,/nfs1/Bioinformatics/FLC_RU/FLC_RU_BAM/51_M16.starout.Aligned.sortedByCoord.out.bam,/nfs1/Bioinformatics/FLC_RU/FLC_RU_BAM/51_M49.starout.Aligned.sortedByCoord.out.bam

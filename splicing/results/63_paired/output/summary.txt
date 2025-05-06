@@ -1,0 +1,6 @@
+EventType	EventTypeDescription	TotalEventsJC	TotalEventsJCEC	SignificantEventsJC	SigEventsJCSample1HigherInclusion	SigEventsJCSample2HigherInclusion	SignificantEventsJCEC	SigEventsJCECSample1HigherInclusion	SigEventsJCECSample2HigherInclusion
+SE	skipped exon	21385	22397	3069	1931	1138	3507	2321	1186
+A5SS	alternative 5' splice sites	2125	2211	400	202	198	471	260	211
+A3SS	alternative 3' splice sites	3095	3155	486	276	210	567	343	224
+MXE	mutually exclusive exons	2651	2821	903	401	502	989	441	548
+RI	retained intron	2609	2902	676	434	242	1098	827	271
