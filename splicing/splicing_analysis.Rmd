@@ -1,0 +1,324 @@
+---
+title: "Splicing Analysis"
+author: "Daniel Guevara"
+date: "2025-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Call libraries
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(patchwork)
+library(pheatmap)
+```
+
+# 2. Setup directories
+```{r}
+working_dir <- "~/github/HLA-I_Analysis/splicing"
+setwd(working_dir)
+```
+
+# 3. Retrieve splicing results
+```{r}
+# Tumor vs normal
+res.T_N.SE <- data.frame(read.csv("results/all_samples_variable/output/SE.MATS.JC.txt", sep = "\t"))
+res.T_N.SE.sig <- res.T_N.SE[res.T_N.SE$FDR < 0.01 & abs(res.T_N.SE$IncLevelDifference) >= 0.05, ]
+
+res.T_N.MXE <- data.frame(read.csv("results/all_samples_variable/output/MXE.MATS.JC.txt", sep = "\t"))
+res.T_N.MXE.sig <- res.T_N.MXE[res.T_N.MXE$FDR < 0.01 & abs(res.T_N.MXE$IncLevelDifference) >= 0.05, ]
+
+res.T_N.RI <- data.frame(read.csv("results/all_samples_variable/output/RI.MATS.JC.txt", sep = "\t"))
+res.T_N.RI.sig <- res.T_N.RI[res.T_N.RI$FDR < 0.01 & abs(res.T_N.RI$IncLevelDifference) >= 0.05, ]
+
+res.T_N.A3SS <- data.frame(read.csv("results/all_samples_variable/output/A3SS.MATS.JC.txt", sep = "\t"))
+res.T_N.A3SS.sig <- res.T_N.A3SS[res.T_N.A3SS$FDR < 0.01 & abs(res.T_N.A3SS$IncLevelDifference) >= 0.05, ]
+
+res.T_N.A5SS <- data.frame(read.csv("results/all_samples_variable/output/A5SS.MATS.JC.txt", sep = "\t"))
+res.T_N.A5SS.sig <- res.T_N.A5SS[res.T_N.A5SS$FDR < 0.01 & abs(res.T_N.A5SS$IncLevelDifference) >= 0.05, ]
+
+shared_genes_1 <- Reduce(intersect, list(res.T_N.SE.sig$GeneID, res.T_N.MXE.sig$GeneID))
+shared_genes_2 <- Reduce(intersect, list(res.T_N.A3SS.sig$GeneID, res.T_N.A5SS.sig$GeneID))
+
+write.xlsx(res.T_N.MXE.sig[res.T_N.MXE.sig$GeneID %in% shared_genes_1, ], "results/MXE_shared.xlsx")
+write.xlsx(res.T_N.SE.sig[res.T_N.SE.sig$GeneID %in% shared_genes_1, ], "results/SE_shared.xlsx")
+
+# Test controls
+test_df_normal <- data.frame(read.csv("results/only_normal/output/SE.MATS.JC.txt", sep = "\t"))
+test_df_tumor <- data.frame(read.csv("results/only_tumor/output/SE.MATS.JC.txt", sep = "\t"))
+
+test_df_normal[test_df_normal$geneSymbol == "INSR",]
+test_df_tumor[test_df_tumor$geneSymbol == "INSR",]
+
+test_df_normal[test_df_normal$geneSymbol == "GCK",]
+test_df_tumor[test_df_tumor$geneSymbol == "GCK",]
+
+```
+
+# 4. Overview of splicing events across samples
+```{r}
+nice_pie <- function(df, selected_cols = c("typeCol", "freqCol"), colors, order = FALSE, levels = NULL) {
+  # Manage data
+  pie.df <- df[, selected_cols]
+  pie.df$percent <- round(pie.df[, 2]*100/sum(pie.df[, 2]), 1)
+  pie.df$label <- paste0(pie.df[, 2], "\n", "(", pie.df$percent, "%)")
+  
+  if (order) {
+    pie.df[, 1] <- factor(pie.df[, 1], levels = levels)
+    pie.df <- pie.df[order(pie.df[, 1]), ]
+    #pie.df$label <- paste0(pie.df[, 1], "\n", pie.df[, 2], "\n", "(", pie.df$percent, "%)")
+  }
+  
+  # Plot
+  p.pie <- ggplot(pie.df, aes(x = "", y = .data[[selected_cols[2]]], fill = .data[[selected_cols[1]]])) +
+    geom_bar(stat = "identity", width = 1, color = "white") +
+    coord_polar("y", start = 0) +
+    theme_void() +
+    geom_text(aes(label = label),
+              position = position_stack(vjust = 0.5),
+              size = 4,
+              color = "black") +
+    scale_fill_manual(values = colors,
+                      labels = c("Alt. 3' Splice Sites (A3SS)", "Alt. 5' Splice Sites (A5SS)",
+                                 "Mutually Exclusive Exons (MXE)", "Retained Intron (RI)", "Skipped Exon (SE)")) +
+    guides(fill = guide_legend(title = "Splicing Event")) +
+    theme(legend.title = element_text(size = 16, face = "bold"),
+          legend.text = element_text(size = 14))
+  
+  return(p.pie)
+}
+my_colors <- c("#F4F7AE", "#E6BDF4", "#FC9272", "#8E90D8", "#B9F1D6")
+
+summary_all <- data.frame(read.csv("results/all_samples_variable/output/summary.txt", header = TRUE, sep = "\t"))
+
+# Plotting summaries
+p.pieJC.tot <- nice_pie(summary_all, selected_cols = c("EventType", "TotalEventsJC"), colors = my_colors) +
+  theme(legend.position = "none")
+p.pieJC.sig <- nice_pie(summary_all, selected_cols = c("EventType", "SignificantEventsJC"), colors = my_colors)
+
+p.pieJC <- p.pieJC.tot + p.pieJC.sig
+
+p.pieJCEC.tot <- nice_pie(summary_all, selected_cols = c("EventType", "TotalEventsJCEC"), colors = my_colors) +
+  theme(legend.position = "none")
+p.pieJCEC.sig <- nice_pie(summary_all, selected_cols = c("EventType", "SignificantEventsJCEC"), colors = my_colors)
+
+p.pieJCEC <- p.pieJCEC.tot + p.pieJCEC.sig
+```
+
+# 5. Volcano plots
+```{r}
+cutoff_alpha <- 0.05
+cutoff_psi <- 0.1
+
+# Plotting function
+volcano_plot <- function(results, x_max = 1, y_max = 6, cutoff_signif = 0.05, cutoff_change = 0.1,
+                         signif_var, change_var, label_var, title, colors = c("red", "grey70", "blue"))
+{
+  # Fixed variables
+  sig_nice <- cutoff_signif/5
+  #chg_nice <- cutoff_change*4
+  chg_nice <- cutoff_change*2
+  
+  # Manage data
+  d.volcano <- data.frame(results)
+  d.volcano <- d.volcano[!is.na(d.volcano[, signif_var]) & d.volcano[, signif_var] < 1, ]
+  d.volcano[d.volcano[, signif_var] < 10**-y_max, signif_var] <- 10**-y_max
+  
+  d.volcano$colors <- rep("other", nrow(d.volcano))
+  d.volcano$colors[(d.volcano[, change_var] >= cutoff_change & d.volcano[, signif_var] < cutoff_signif)] <- "over"
+  d.volcano$colors[(d.volcano[, change_var] <= -cutoff_change & d.volcano[, signif_var] < cutoff_signif)] <- "under"
+  
+  d.volcano$shapes <- rep("nohits", nrow(d.volcano))
+  d.volcano$shapes[d.volcano[, signif_var] <= 10**-y_max] <- "hits"
+  
+  # Condition for labeling
+  cond <- d.volcano[, signif_var] < sig_nice & abs(d.volcano[, change_var]) > chg_nice
+  
+  # Plot
+  p.volcano <- ggplot() + theme_bw() +
+    scale_y_continuous(expand = c(0.03, 0),
+                       limits = c(0, y_max),
+                       breaks = seq(0, y_max, by = 2),
+                       minor_breaks = seq(0, y_max, by = 1)) +
+    scale_x_continuous(expand = c(0.03, 0.03),
+                       limits = c(-x_max, x_max),
+                       breaks = seq(-x_max, x_max, by = x_max*0.5),
+                       minor_breaks = seq(-x_max, x_max, by = x_max*0.1)) +
+    
+    # Vertical lines and labels:
+    geom_vline(xintercept = c(-cutoff_change, cutoff_change), color = "grey20", alpha = 0.8, linetype = 2, linewidth = 1.2) +
+    
+    # Horizontal line and label:
+    geom_hline(yintercept = -log10(cutoff_signif), color = "grey20", alpha = 0.8, linetype = 2, linewidth = 1.2) +
+    geom_text(aes(x = -0.8, y = -log10(cutoff_signif) + 0.15, label = paste("q =", cutoff_signif)), color = "grey20", size = 6.2) +
+    
+    # Datapoints, in different colors:
+    geom_point(data = d.volcano,
+               aes(x = .data[[change_var]], y = -log10(.data[[signif_var]]), fill = colors, shape = shapes),
+               size = 5.5, color = "gray10", alpha = 0.4, show.legend = TRUE) +
+    
+    # Color settings
+    scale_fill_manual(name = "Splicing change",
+                      values = c("over" = colors[1], "other" = colors[2], "under" = colors[3]),
+                      breaks = c("over", "other", "under"),
+                      labels = c("High in Tumor", "No difference", "High in Normal"),
+                      guide = guide_legend(override.aes = aes(shape = 21, size = 3, alpha = 1))) +
+    
+    # Change outliers shapes
+    scale_shape_manual(name = "Shape",
+                       values = c("hits" = 24, "nohits" = 21),
+                       guide = guide_legend(override.aes = list(fill = "white", size = 3, alpha = 1)),
+                       labels = c(bquote(FDR <= 10^-.(y_max)), bquote(FDR > 10^-.(y_max)))) +
+    
+    # Labels for detectable genes
+    geom_label_repel(data = d.volcano[cond, ],
+                     aes(x = .data[[change_var]], y = -log10(.data[[signif_var]]), label = .data[[label_var]]),
+                     inherit.aes = FALSE, parse = FALSE, max.iter = 5000, color = "black", size = 5,
+                     segment.alpha = 1.5, box.padding = unit(0.8, "lines"), min.segment.length = unit(0.01, "lines")) +
+    
+    # Axis labels:
+    labs(x = expression("Δ(PSI)"),
+         y = expression("-log"[10]*"(FDR)"),
+         title = title) +
+    
+    # Labels size
+    theme(plot.title = element_text(size = 26, hjust = 0.5),
+          axis.text.x = element_text(size = 22),
+          axis.text.y = element_text(size = 22),
+          axis.title.x = element_text(size = 26),
+          axis.title.y = element_text(size = 26),
+          legend.text = element_text(size = 18),
+          legend.title = element_text(size= 20, face = "bold"))
+  
+  return(p.volcano)
+}
+
+p.volcano.SE <- volcano_plot(results = res.T_N.SE, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Skipped Exon", cutoff_change = 0.2)
+
+p.volcano.MXE <- volcano_plot(results = res.T_N.MXE, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Mutually Exclusive Exons")
+
+p.volcano.RI <- volcano_plot(results = res.T_N.RI, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Retained Intron")
+
+p.volcano.A3SS <- volcano_plot(results = res.T_N.A3SS, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 3' Splice Sites")
+
+p.volcano.A5SS <- volcano_plot(results = res.T_N.A5SS, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 5' Splice Sites")
+```
+
+# 6. Heatmaps by splicing event
+```{r}
+colnames <- data.frame(label = c("51N", "57N", "59N", "63N", "148N",
+                                 "51P", "51M-1", "51M-2", "51M-3", "57M", "59P", "59M",
+                                 "63M", "148M-1", "148M-2", "62M", "88P", "88M", "117M", "123M"),
+                       group = c(rep("Normal", 5), rep("Tumor", 15)))
+
+# Colors
+ann_colors <- list(Group = c(Normal = "#bbffff", Tumor = "#ffb6c1"))
+
+# Annotation
+group_labels <- c(rep("Normal", 5), rep("Tumor", 15))
+anot <- data.frame(Group = factor(group_labels))
+
+# Extract psi values
+split_psi <- function(df, gene_col = "geneSymbol", psi_cols = c("IncLevel1", "IncLevel2"), num = 10) {
+  initial_df <- df[order(df$FDR), ]
+  initial_df <- initial_df[1:num, ]
+  psi_split <- lapply(initial_df[, psi_cols], function(x) t(sapply(strsplit(x, ","), as.numeric)))
+  psi_mat <- do.call(cbind, psi_split)
+  rownames(psi_mat) <- initial_df[[gene_col]]
+  return(as.data.frame(psi_mat))
+}
+
+# Test data frame
+df.PSI.SE <- split_psi(res.T_N.SE.sig)
+df.PSI.SE <- df.PSI.SE[rowSums(is.na(df.PSI.SE)) != ncol(df.PSI.SE), ]
+
+df.PSI.MXE <- split_psi(res.T_N.MXE.sig)
+df.PSI.MXE <- df.PSI.MXE[rowSums(is.na(df.PSI.MXE)) != ncol(df.PSI.MXE), ]
+
+df.PSI.RI <- split_psi(res.T_N.RI.sig)
+df.PSI.RI <- df.PSI.RI[rowSums(is.na(df.PSI.RI)) != ncol(df.PSI.RI), ]
+
+df.PSI.A3SS <- split_psi(res.T_N.A3SS.sig)
+df.PSI.A3SS <- df.PSI.A3SS[rowSums(is.na(df.PSI.A3SS)) != ncol(df.PSI.A3SS), ]
+
+df.PSI.A5SS <- split_psi(res.T_N.A5SS.sig)
+df.PSI.A5SS <- df.PSI.A5SS[rowSums(is.na(df.PSI.A5SS)) != ncol(df.PSI.A5SS), ]
+
+merged_df <- rbind(df.PSI.SE, df.PSI.MXE, df.PSI.RI, df.PSI.A3SS, df.PSI.A5SS)
+colnames(merged_df) <- colnames$label
+
+# Plot heatmap
+plot_heatmap <- function(df, annotation = anot, annotation_cols = ann_colors) {
+  psi_scaled <- t(scale(t(df)))
+  rownames(annotation) <- colnames(psi_scaled)
+  
+  p.heat <- pheatmap(psi_scaled,
+                     cluster_cols = FALSE,
+                     cluster_rows = FALSE,
+                     show_rownames = TRUE, 
+                     scale = "none",
+                     gaps_row = c(10, 20, 30, 40),
+                     gaps_col = c(5),
+                     annotation_col = annotation,
+                     annotation_colors = annotation_cols,
+                     fontsize_row = 8,
+                     show_colnames = TRUE)
+  
+  return(p.heat)
+}
+
+p.heat.SE <- plot_heatmap(df.PSI.SE)
+p.heat.MXE <- plot_heatmap(df.PSI.MXE)
+
+merged.heat <- plot_heatmap(merged_df)
+```
+
+# 7. Barplots per gene with splicing events
+```{r}
+count_shared_events <- function(df, psi_col, group) {
+  # Split and convert PSI strings to numeric vectors
+  psi_matrix <- t(sapply(strsplit(df[[psi_col]], ","), as.numeric))
+  psi_df <- as.data.frame(psi_matrix)
+  
+  # Assign consistent sample names
+  colnames(psi_df) <- paste(group, seq_len(ncol(psi_df)), sep = "_")
+  
+  # Bind gene symbol and event ID (optional)
+  psi_df$geneSymbol <- df$geneSymbol
+  psi_df$eventID <- seq_len(nrow(df))  # to track unique splicing events if needed
+  
+  # Count number of non-NA & non-zero PSI values per event (row)
+  count_df <- psi_df[, 1:(ncol(psi_df) - 2)]  # exclude geneSymbol and eventID
+  non_zero_counts <- rowSums(!is.na(count_df) & count_df > 0)
+  
+  # Create frequency table
+  frequency_table <- table(non_zero_counts)
+  
+  return(list(table = frequency_table, matrix = psi_df))
+}
+
+plot_event_psi <- function(psi_matrix, event_id) {
+  psi_row <- psi_matrix[psi_matrix$eventID == event_id, ]
+  
+  df_long <- data.frame(
+    Sample = colnames(psi_row)[1:(ncol(psi_row) - 2)],
+    PSI = as.numeric(psi_row[1, 1:(ncol(psi_row) - 2)])
+  )
+  
+  ggplot(df_long, aes(x = Sample, y = PSI)) +
+    geom_bar(stat = "identity", fill = "#2b8cbe") +
+    theme_minimal() +
+    labs(title = paste("PSI for Event", event_id, "(", psi_row$geneSymbol, ")"),
+         x = "Sample", y = "PSI") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+frequency.SE <- count_shared_events(res.T_N.SE.sig, "IncLevel2", "Tumor")
+
+plot_event_psi(frequency.SE$matrix, 84)
+```
+
