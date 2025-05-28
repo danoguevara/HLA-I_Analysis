@@ -25,37 +25,37 @@ setwd(working_dir)
 
 # 3. Retrieve splicing results
 ```{r}
-# Tumor vs normal
-res.T_N.SE <- data.frame(read.csv("results/all_samples_variable/output/SE.MATS.JC.txt", sep = "\t"))
-res.T_N.SE.sig <- res.T_N.SE[res.T_N.SE$FDR < 0.01 & abs(res.T_N.SE$IncLevelDifference) >= 0.05, ]
+# JC model
+res.SE.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/SE.MATS.JC.txt", sep = "\t"))
+res.SE.JC.sig <- res.SE.JC[res.SE.JC$FDR < 0.01 & abs(res.SE.JC$IncLevelDifference) >= 0.05, ]
 
-res.T_N.MXE <- data.frame(read.csv("results/all_samples_variable/output/MXE.MATS.JC.txt", sep = "\t"))
-res.T_N.MXE.sig <- res.T_N.MXE[res.T_N.MXE$FDR < 0.01 & abs(res.T_N.MXE$IncLevelDifference) >= 0.05, ]
+res.MXE.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/MXE.MATS.JC.txt", sep = "\t"))
+res.MXE.JC.sig <- res.MXE.JC[res.MXE.JC$FDR < 0.01 & abs(res.MXE.JC$IncLevelDifference) >= 0.05, ]
 
-res.T_N.RI <- data.frame(read.csv("results/all_samples_variable/output/RI.MATS.JC.txt", sep = "\t"))
-res.T_N.RI.sig <- res.T_N.RI[res.T_N.RI$FDR < 0.01 & abs(res.T_N.RI$IncLevelDifference) >= 0.05, ]
+res.RI.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/RI.MATS.JC.txt", sep = "\t"))
+res.RI.JC.sig <- res.RI.JC[res.RI.JC$FDR < 0.01 & abs(res.RI.JC$IncLevelDifference) >= 0.05, ]
 
-res.T_N.A3SS <- data.frame(read.csv("results/all_samples_variable/output/A3SS.MATS.JC.txt", sep = "\t"))
-res.T_N.A3SS.sig <- res.T_N.A3SS[res.T_N.A3SS$FDR < 0.01 & abs(res.T_N.A3SS$IncLevelDifference) >= 0.05, ]
+res.A3SS.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JC.txt", sep = "\t"))
+res.A3SS.JC.sig <- res.A3SS.JC[res.A3SS.JC$FDR < 0.01 & abs(res.A3SS.JC$IncLevelDifference) >= 0.05, ]
 
-res.T_N.A5SS <- data.frame(read.csv("results/all_samples_variable/output/A5SS.MATS.JC.txt", sep = "\t"))
-res.T_N.A5SS.sig <- res.T_N.A5SS[res.T_N.A5SS$FDR < 0.01 & abs(res.T_N.A5SS$IncLevelDifference) >= 0.05, ]
+res.A5SS.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JC.txt", sep = "\t"))
+res.A5SS.JC.sig <- res.T_N.A5SS[res.T_N.A5SS$FDR < 0.01 & abs(res.T_N.A5SS$IncLevelDifference) >= 0.05, ]
 
-shared_genes_1 <- Reduce(intersect, list(res.T_N.SE.sig$GeneID, res.T_N.MXE.sig$GeneID))
-shared_genes_2 <- Reduce(intersect, list(res.T_N.A3SS.sig$GeneID, res.T_N.A5SS.sig$GeneID))
+# JCEC model
+res.SE.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/SE.MATS.JCEC.txt", sep = "\t"))
+res.SE.JCEC.sig <- res.SE.JCEC[res.SE.JCEC$FDR < 0.01 & abs(res.SE.JCEC$IncLevelDifference) >= 0.05, ]
 
-write.xlsx(res.T_N.MXE.sig[res.T_N.MXE.sig$GeneID %in% shared_genes_1, ], "results/MXE_shared.xlsx")
-write.xlsx(res.T_N.SE.sig[res.T_N.SE.sig$GeneID %in% shared_genes_1, ], "results/SE_shared.xlsx")
+res.MXE.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/MXE.MATS.JCEC.txt", sep = "\t"))
+res.MXE.JCEC.sig <- res.MXE.JCEC[res.MXE.JCEC$FDR < 0.01 & abs(res.MXE.JCEC$IncLevelDifference) >= 0.05, ]
 
-# Test controls
-test_df_normal <- data.frame(read.csv("results/only_normal/output/SE.MATS.JC.txt", sep = "\t"))
-test_df_tumor <- data.frame(read.csv("results/only_tumor/output/SE.MATS.JC.txt", sep = "\t"))
+res.RI.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/RI.MATS.JCEC.txt", sep = "\t"))
+res.RI.JCEC.sig <- res.RI.JCEC[res.RI.JCEC$FDR < 0.01 & abs(res.RI.JCEC$IncLevelDifference) >= 0.05, ]
 
-test_df_normal[test_df_normal$geneSymbol == "INSR",]
-test_df_tumor[test_df_tumor$geneSymbol == "INSR",]
+res.A3SS.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JCEC.txt", sep = "\t"))
+res.A3SS.JCEC.sig <- res.A3SS.JCEC[res.A3SS.JCEC$FDR < 0.01 & abs(res.A3SS.JCEC$IncLevelDifference) >= 0.05, ]
 
-test_df_normal[test_df_normal$geneSymbol == "GCK",]
-test_df_tumor[test_df_tumor$geneSymbol == "GCK",]
+res.A5SS.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JCEC.txt", sep = "\t"))
+res.A5SS.JCEC.sig <- res.A5SS.JCEC[res.A5SS.JCEC$FDR < 0.01 & abs(res.A5SS.JCEC$IncLevelDifference) >= 0.05, ]
 
 ```
 
@@ -93,7 +93,7 @@ nice_pie <- function(df, selected_cols = c("typeCol", "freqCol"), colors, order 
 }
 my_colors <- c("#F4F7AE", "#E6BDF4", "#FC9272", "#8E90D8", "#B9F1D6")
 
-summary_all <- data.frame(read.csv("results/all_samples_variable/output/summary.txt", header = TRUE, sep = "\t"))
+summary_all <- data.frame(read.csv("results/all_samples_variable_ind/output/summary.txt", header = TRUE, sep = "\t"))
 
 # Plotting summaries
 p.pieJC.tot <- nice_pie(summary_all, selected_cols = c("EventType", "TotalEventsJC"), colors = my_colors) +
@@ -120,8 +120,8 @@ volcano_plot <- function(results, x_max = 1, y_max = 6, cutoff_signif = 0.05, cu
 {
   # Fixed variables
   sig_nice <- cutoff_signif/5
-  #chg_nice <- cutoff_change*4
-  chg_nice <- cutoff_change*2
+  chg_nice <- cutoff_change*4
+  #chg_nice <- cutoff_change*2
   
   # Manage data
   d.volcano <- data.frame(results)
@@ -197,22 +197,34 @@ volcano_plot <- function(results, x_max = 1, y_max = 6, cutoff_signif = 0.05, cu
   return(p.volcano)
 }
 
-p.volcano.SE <- volcano_plot(results = res.T_N.SE, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Skipped Exon", cutoff_change = 0.2)
+# JC model volcanos
+pv.SE.JC <- volcano_plot(results = res.SE.JC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Skipped Exon")
 
-p.volcano.MXE <- volcano_plot(results = res.T_N.MXE, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Mutually Exclusive Exons")
+pv.MXE.JC <- volcano_plot(results = res.MXE.JC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Mutually Exclusive Exons")
 
-p.volcano.RI <- volcano_plot(results = res.T_N.RI, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Retained Intron")
+pv.RI.JC <- volcano_plot(results = res.RI.JC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Retained Intron")
 
-p.volcano.A3SS <- volcano_plot(results = res.T_N.A3SS, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 3' Splice Sites")
+pv.A3SS.JC <- volcano_plot(results = res.A3SS.JC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 3' Splice Sites")
 
-p.volcano.A5SS <- volcano_plot(results = res.T_N.A5SS, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 5' Splice Sites")
+pv.A5SS.JC <- volcano_plot(results = res.A5SS.JC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 5' Splice Sites")
+
+# JCEC model volcanos
+pv.SE.JCEC <- volcano_plot(results = res.SE.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Skipped Exon", cutoff_change = 0.2)
+
+pv.MXE.JCEC <- volcano_plot(results = res.MXE.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Mutually Exclusive Exons")
+
+pv.RI.JCEC <- volcano_plot(results = res.RI.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Retained Intron")
+
+pv.A3SS.JCEC <- volcano_plot(results = res.A3SS.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 3' Splice Sites")
+
+pv.A5SS.JCEC <- volcano_plot(results = res.A5SS.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 5' Splice Sites")
 ```
 
 # 6. Heatmaps by splicing event
 ```{r}
-colnames <- data.frame(label = c("51N", "57N", "59N", "63N", "148N",
-                                 "51P", "51M-1", "51M-2", "51M-3", "57M", "59P", "59M",
-                                 "63M", "148M-1", "148M-2", "62M", "88P", "88M", "117M", "123M"),
+colnames <- data.frame(label = c("51", "57", "59", "63", "148",
+                                 "51P", "51-M1", "51-M2", "51-M3", "57M", "59P", "59M",
+                                 "62M", "63R", "88-M1", "88-M2", "117M", "123M", "148-P1", "148-P2"),
                        group = c(rep("Normal", 5), rep("Tumor", 15)))
 
 # Colors
@@ -233,23 +245,35 @@ split_psi <- function(df, gene_col = "geneSymbol", psi_cols = c("IncLevel1", "In
 }
 
 # Test data frame
-df.PSI.SE <- split_psi(res.T_N.SE.sig)
-df.PSI.SE <- df.PSI.SE[rowSums(is.na(df.PSI.SE)) != ncol(df.PSI.SE), ]
+mx.SE.JC <- split_psi(res.SE.JC.sig)
+mx.SE.JC <- mx.SE.JC[rowSums(is.na(mx.SE.JC)) != ncol(mx.SE.JC), ]
+mx.SE.JCEC <- split_psi(res.SE.JCEC.sig)
+mx.SE.JCEC <- mx.SE.JCEC[rowSums(is.na(mx.SE.JCEC)) != ncol(mx.SE.JCEC), ]
 
-df.PSI.MXE <- split_psi(res.T_N.MXE.sig)
-df.PSI.MXE <- df.PSI.MXE[rowSums(is.na(df.PSI.MXE)) != ncol(df.PSI.MXE), ]
+mx.MXE.JC <- split_psi(res.MXE.JC.sig)
+mx.MXE.JC <- mx.MXE.JC[rowSums(is.na(mx.MXE.JC)) != ncol(mx.MXE.JC), ]
+mx.MXE.JCEC <- split_psi(res.MXE.JCEC.sig)
+mx.MXE.JCEC <- mx.MXE.JCEC[rowSums(is.na(mx.MXE.JCEC)) != ncol(mx.MXE.JCEC), ]
 
-df.PSI.RI <- split_psi(res.T_N.RI.sig)
-df.PSI.RI <- df.PSI.RI[rowSums(is.na(df.PSI.RI)) != ncol(df.PSI.RI), ]
+mx.RI.JC <- split_psi(res.RI.JC.sig)
+mx.RI.JC <- mx.RI.JC[rowSums(is.na(mx.RI.JC)) != ncol(mx.RI.JC), ]
+mx.RI.JCEC <- split_psi(res.RI.JCEC.sig)
+mx.RI.JCEC <- mx.RI.JCEC[rowSums(is.na(mx.RI.JCEC)) != ncol(mx.RI.JCEC), ]
 
-df.PSI.A3SS <- split_psi(res.T_N.A3SS.sig)
-df.PSI.A3SS <- df.PSI.A3SS[rowSums(is.na(df.PSI.A3SS)) != ncol(df.PSI.A3SS), ]
+mx.A3SS.JC <- split_psi(res.A3SS.JC.sig)
+mx.A3SS.JC <- mx.A3SS.JC[rowSums(is.na(mx.A3SS.JC)) != ncol(mx.A3SS.JC), ]
+mx.A3SS.JCEC <- split_psi(res.A3SS.JCEC.sig)
+mx.A3SS.JCEC <- mx.A3SS.JCEC[rowSums(is.na(mx.A3SS.JCEC)) != ncol(mx.A3SS.JCEC), ]
 
-df.PSI.A5SS <- split_psi(res.T_N.A5SS.sig)
-df.PSI.A5SS <- df.PSI.A5SS[rowSums(is.na(df.PSI.A5SS)) != ncol(df.PSI.A5SS), ]
+mx.A5SS.JC <- split_psi(res.A5SS.JC.sig)
+mx.A5SS.JC <- mx.A5SS.JC[rowSums(is.na(mx.A5SS.JC)) != ncol(mx.A5SS.JC), ]
+mx.A5SS.JCEC <- split_psi(res.A5SS.JCEC.sig)
+mx.A5SS.JCEC <- mx.A5SS.JCEC[rowSums(is.na(mx.A5SS.JCEC)) != ncol(mx.A5SS.JCEC), ]
 
-merged_df <- rbind(df.PSI.SE, df.PSI.MXE, df.PSI.RI, df.PSI.A3SS, df.PSI.A5SS)
-colnames(merged_df) <- colnames$label
+mx.JC.merged <- rbind(mx.SE.JC, mx.MXE.JC, mx.RI.JC, mx.A3SS.JC, mx.A5SS.JC)
+mx.JCEC.merged <- rbind(mx.SE.JCEC, mx.MXE.JCEC, mx.RI.JCEC, mx.A3SS.JCEC, mx.A5SS.JCEC)
+colnames(mx.JC.merged) <- colnames$label
+colnames(mx.JCEC.merged) <- colnames$label
 
 # Plot heatmap
 plot_heatmap <- function(df, annotation = anot, annotation_cols = ann_colors) {
@@ -271,15 +295,13 @@ plot_heatmap <- function(df, annotation = anot, annotation_cols = ann_colors) {
   return(p.heat)
 }
 
-p.heat.SE <- plot_heatmap(df.PSI.SE)
-p.heat.MXE <- plot_heatmap(df.PSI.MXE)
-
-merged.heat <- plot_heatmap(merged_df)
+ph.JC.merged <- plot_heatmap(mx.JC.merged)
+ph.JCEC.merged <- plot_heatmap(mx.JCEC.merged)
 ```
 
-# 7. Barplots per gene with splicing events
+# 7. [IN PROGRESS] Barplots per gene with splicing events
 ```{r}
-count_shared_events <- function(df, psi_col, group) {
+#count_shared_events <- function(df, psi_col, group) {
   # Split and convert PSI strings to numeric vectors
   psi_matrix <- t(sapply(strsplit(df[[psi_col]], ","), as.numeric))
   psi_df <- as.data.frame(psi_matrix)
@@ -301,24 +323,29 @@ count_shared_events <- function(df, psi_col, group) {
   return(list(table = frequency_table, matrix = psi_df))
 }
 
-plot_event_psi <- function(psi_matrix, event_id) {
-  psi_row <- psi_matrix[psi_matrix$eventID == event_id, ]
+#plot_event_psi <- function(psi_matrix, event_id) {
+#  psi_row <- psi_matrix[psi_matrix$eventID == event_id, ]
   
-  df_long <- data.frame(
-    Sample = colnames(psi_row)[1:(ncol(psi_row) - 2)],
-    PSI = as.numeric(psi_row[1, 1:(ncol(psi_row) - 2)])
-  )
+#  df_long <- data.frame(
+#    Sample = colnames(psi_row)[1:(ncol(psi_row) - 2)],
+#    PSI = as.numeric(psi_row[1, 1:(ncol(psi_row) - 2)])
+#  )
   
-  ggplot(df_long, aes(x = Sample, y = PSI)) +
-    geom_bar(stat = "identity", fill = "#2b8cbe") +
-    theme_minimal() +
-    labs(title = paste("PSI for Event", event_id, "(", psi_row$geneSymbol, ")"),
-         x = "Sample", y = "PSI") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-}
+#  ggplot(df_long, aes(x = Sample, y = PSI)) +
+#    geom_bar(stat = "identity", fill = "#2b8cbe") +
+#    theme_minimal() +
+#    labs(title = paste("PSI for Event", event_id, "(", psi_row$geneSymbol, ")"),
+#         x = "Sample", y = "PSI") +
+#    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+#}
 
-frequency.SE <- count_shared_events(res.T_N.SE.sig, "IncLevel2", "Tumor")
+#frequency.SE <- count_shared_events(res.T_N.SE.sig, "IncLevel2", "Tumor")
 
-plot_event_psi(frequency.SE$matrix, 84)
+#plot_event_psi(frequency.SE$matrix, 84)
+```
+
+# 8. Map peptides to splicing variants
+```{r}
+
 ```
 
