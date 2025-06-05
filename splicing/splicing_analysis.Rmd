@@ -15,6 +15,7 @@ library(ggplot2)
 library(ggrepel)
 library(patchwork)
 library(pheatmap)
+library(openxlsx)
 ```
 
 # 2. Setup directories
@@ -39,7 +40,7 @@ res.A3SS.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/A3SS
 res.A3SS.JC.sig <- res.A3SS.JC[res.A3SS.JC$FDR < 0.01 & abs(res.A3SS.JC$IncLevelDifference) >= 0.05, ]
 
 res.A5SS.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JC.txt", sep = "\t"))
-res.A5SS.JC.sig <- res.T_N.A5SS[res.T_N.A5SS$FDR < 0.01 & abs(res.T_N.A5SS$IncLevelDifference) >= 0.05, ]
+res.A5SS.JC.sig <- res.A5SS.JC[res.A5SS.JC$FDR < 0.01 & abs(res.A5SS.JC$IncLevelDifference) >= 0.05, ]
 
 # JCEC model
 res.SE.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/SE.MATS.JCEC.txt", sep = "\t"))
@@ -56,6 +57,55 @@ res.A3SS.JCEC.sig <- res.A3SS.JCEC[res.A3SS.JCEC$FDR < 0.01 & abs(res.A3SS.JCEC$
 
 res.A5SS.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JCEC.txt", sep = "\t"))
 res.A5SS.JCEC.sig <- res.A5SS.JCEC[res.A5SS.JCEC$FDR < 0.01 & abs(res.A5SS.JCEC$IncLevelDifference) >= 0.05, ]
+```
+
+## Correlation of results
+```{r}
+psi_correlation <- function(df1, df2, columns = c("ID", "geneSymbol", "IncLevelDifference"),
+                            cutoff = 0.4, title, p_size = 2.5, p_shape = 20)
+{
+  # Integrate data frames
+  merged_df <- merge(df1[, columns], df2[, columns],
+                     by = columns[1:2], suffixes = c("_JC", "_JCEC"))
+  
+  # Create label data frame
+  label_df <- subset(merged_df,
+                     abs(IncLevelDifference_JC) >= cutoff | abs(IncLevelDifference_JCEC) >= cutoff)
+  
+  label_df$nudge_y <- ifelse(label_df$IncLevelDifference_JCEC > label_df$IncLevelDifference_JC,
+                             0.08, -0.08)
+  
+  # Pearson correlation
+  cor_test <- cor.test(merged_df$IncLevelDifference_JC,
+                       merged_df$IncLevelDifference_JCEC, method = "pearson")
+  r_squared <- round(cor_test$estimate^2, 3)
+  
+  # Plotting
+  plot <- ggplot(merged_df, aes(x = IncLevelDifference_JC, y = IncLevelDifference_JCEC)) +
+    geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
+    geom_point(alpha = 0.7, size = p_size, shape = p_shape) + theme_bw() +
+    annotate("text", x = 0.6, y = -0.6, label = paste0("R² = ", r_squared), size = 4, hjust = 0) +
+    geom_label_repel(data = label_df, aes(label = geneSymbol), size = 3,
+                     nudge_y = label_df$nudge_y, segment.alpha = 0.5, segment.size = 0.3,
+                     box.padding = unit(0.4, "lines"), point.padding = unit(0.3, "lines"),
+                     max.overlaps = Inf, show.legend = FALSE) +
+    labs(title = title,
+         x = expression(Delta*"PSI"*" - Junction Count"),
+         y = expression(Delta*"PSI"*" - Junction & Exon Count")) +
+    coord_cartesian(xlim = c(min(merged_df$IncLevelDifference_JC) - 0.1,
+                             max(merged_df$IncLevelDifference_JC) + 0.1),
+                    ylim = c(min(merged_df$IncLevelDifference_JCEC) - 0.1,
+                             max(merged_df$IncLevelDifference_JCEC) + 0.1))
+  
+  return(plot)
+}
+
+psi_correlation(df1 = res.SE.JC.sig, df2 = res.SE.JCEC.sig, title = "Skipped Exon")
+psi_correlation(df1 = res.MXE.JC.sig, df2 = res.MXE.JCEC.sig, title = "Mutually Exclusive Exons", cutoff = 0.3)
+psi_correlation(df1 = res.RI.JC.sig, df2 = res.RI.JCEC.sig, title = "Retained Intron", cutoff = 0.3)
+psi_correlation(df1 = res.A3SS.JC.sig, df2 = res.A3SS.JCEC.sig, title = "Alt. 3' Splice Sites", cutoff = 0.2)
+psi_correlation(df1 = res.A5SS.JC.sig, df2 = res.A5SS.JCEC.sig, title = "Alt. 5' Splice Sites", cutoff = 0.2)
+
 
 ```
 
@@ -209,7 +259,7 @@ pv.A3SS.JC <- volcano_plot(results = res.A3SS.JC, signif_var = "FDR", change_var
 pv.A5SS.JC <- volcano_plot(results = res.A5SS.JC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Alt. 5' Splice Sites")
 
 # JCEC model volcanos
-pv.SE.JCEC <- volcano_plot(results = res.SE.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Skipped Exon", cutoff_change = 0.2)
+pv.SE.JCEC <- volcano_plot(results = res.SE.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Skipped Exon")
 
 pv.MXE.JCEC <- volcano_plot(results = res.MXE.JCEC, signif_var = "FDR", change_var = "IncLevelDifference", label_var = "geneSymbol", title = "Mutually Exclusive Exons")
 
@@ -301,7 +351,7 @@ ph.JCEC.merged <- plot_heatmap(mx.JCEC.merged)
 
 # 7. [IN PROGRESS] Barplots per gene with splicing events
 ```{r}
-#count_shared_events <- function(df, psi_col, group) {
+count_shared_events <- function(df, psi_col, group) {
   # Split and convert PSI strings to numeric vectors
   psi_matrix <- t(sapply(strsplit(df[[psi_col]], ","), as.numeric))
   psi_df <- as.data.frame(psi_matrix)
@@ -323,29 +373,200 @@ ph.JCEC.merged <- plot_heatmap(mx.JCEC.merged)
   return(list(table = frequency_table, matrix = psi_df))
 }
 
-#plot_event_psi <- function(psi_matrix, event_id) {
-#  psi_row <- psi_matrix[psi_matrix$eventID == event_id, ]
-  
-#  df_long <- data.frame(
-#    Sample = colnames(psi_row)[1:(ncol(psi_row) - 2)],
-#    PSI = as.numeric(psi_row[1, 1:(ncol(psi_row) - 2)])
-#  )
-  
-#  ggplot(df_long, aes(x = Sample, y = PSI)) +
-#    geom_bar(stat = "identity", fill = "#2b8cbe") +
-#    theme_minimal() +
-#    labs(title = paste("PSI for Event", event_id, "(", psi_row$geneSymbol, ")"),
-#         x = "Sample", y = "PSI") +
-#    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-#}
 
-#frequency.SE <- count_shared_events(res.T_N.SE.sig, "IncLevel2", "Tumor")
-
-#plot_event_psi(frequency.SE$matrix, 84)
 ```
 
 # 8. Map peptides to splicing variants
+## Call libraries
 ```{r}
+library(GenomicFeatures)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(Biostrings)
+library(GenomicRanges)
+```
+
+
+## Read reference
+```{r}
+tx_tab <- data.frame(read.xlsx("../../../Documents/Articles/CCC/tx2gene_GRCh38v103.xlsx"))
+gtf_file <- "GRCh38.103.gtf"
+
+txdb <- txdbmaker::makeTxDbFromGFF(file = gtf_file, format = "gtf",
+                                   organism = "Homo sapiens", dataSource = "Ensembl_103")
+```
+
+## Build isoform cDNA
+```{r}
+buildSkippingIsoformCDNA <- function(se_row, tx_table = tx_tab, edb = EnsDb.Hsapiens.v103,
+                                     bsgenome = BSgenome.Hsapiens.UCSC.hg38)
+{
+  # Extract rMATS coordinates
+  chr <- as.character(se_row$chr)
+  se_start <- se_row$exonStart_0base + 1
+  se_end <- se_row$exonEnd
+  
+  gene_sym <- as.character(se_row$geneSymbol)
+  
+  # Filter ensemblDB
+  transcripts_for_gene <- tx_table[tx_table$symbol == gene_sym, "transcriptID"]
+  transcripts_for_gene <- unique(as.character(transcripts_for_gene))
+  
+  if (length(transcripts_for_gene) == 0) {
+    stop("No transcriptID for symbol ", gene_sym)
+  }
+  
+  # Obtain exon GRangesList by transcriptIDs
+  exon_list_all <- exonsBy(edb, by = "tx", filter = TxIdFilter(transcripts_for_gene))
+  
+  skip_cdna_list <- DNAStringSet()
+  
+  # Process exons
+  for (tx_id in names(exon_list_all)) {
+    exons_of_tx <- exon_list_all[[tx_id]]
+    
+    # Verify if any exon exactly matches the SE
+    hits <- which(
+      as.character(seqnames(exons_of_tx)) == chr &
+      start(exons_of_tx) == se_start &
+      end(exons_of_tx) == se_end
+    )
+    if (length(hits) == 0) {
+      next
+    }
+    
+    # Remove identified exon
+    exons_skip <- exons_of_tx[-hits]
+    exons_skip <- sort(exons_skip)
+    
+    # Extract DNA from concatenated exons
+    chr_seq <- bsgenome[[as.character(seqnames(exons_skip)[1])]]
+    ranges_list <- GRanges(
+      seqnames = seqnames(exons_skip),
+      ranges = IRanges(start = start(exons_skip),
+                       end = end(exons_skip)),
+      strand = strand(exons_skip)
+    )
+    cds_dna <- getSeq(bsgenome, ranges_list)
+    skip_cdna <- do.call(xscat, as.list(cds_dna))
+    
+    # Managing reverse compiment (- strand)
+    tx_strand <- as.character(strand(exons_skip)[1])
+    if (tx_strand == "-") {
+      skip_cdna <- reverseComplement(skip_cdna)
+    }
+    
+    # Save transcript ID
+    skip_cdna_list <- append(skip_cdna_list, skip_cdna)
+    names(skip_cdna_list)[length(skip_cdna_list)] <- tx_id
+  }
+  
+  if (length(skip_cdna_list) == 0) {
+    warning("No transcript from ", gene_sym, " contained coordinates: ", se_start, "-", se_end, ".")
+  }
+  return(skip_cdna_list)
+}
+```
+
+## Function to tile peptides
+```{r}
+i <- 23083
+se_row <- res.SE.JC.sig[i, ]
+
+# Generate skipped isoform
+skip_cdna_set <- buildSkippingIsoformCDNA(se_row)
+
+# Translate isoform
+translateSkippingIsoform <- function(skip_cdna) {
+  rna_seq <- RNAString(skip_cdna)
+  aa_seq  <- translate(rna_seq, if.fuzzy.codon="solve")
+  return(aa_seq)
+}
+
+# Get junction coordinates
+findJunctionAADist <- function(skipped_exons_gr, tx_strand, se_row) {
+  exon_widths <- width(skipped_exons_gr)
+  
+  de_start <- se_row$downstreamES
+  de_idx <- which(start(skipped_exons_gr) <= de_start & end(skipped_exons_gr) >= de_start)
+  if (length(de_idx) != 1) {
+    stop("Downstream exon not identified for: ", se_row$geneSymbol)
+  }
+  
+  if (tx_strand == "+") {
+    offset_within_de <- de_start - start(skipped_exons_gr[de_idx]) + 1
+  } else {
+    offset_within_de <- end(skipped_exons_gr[de_idx]) - de_start + 1
+  }
+  
+  if (de_idx > 1) {
+    total_bases_before <- sum(exon_widths[1:(de_idx-1)]) + offset_within_de - 1
+  } else {
+    total_bases_before <- offset_within_de - 1
+  }
+  
+  aa_pos <- floor(total_bases_before / 3) + 1
+  return(list(n_bases = total_bases_before, aa_index = aa_pos))
+}
+
+# Tile neoepitopes
+tileNeoepitopes <- function(aa_seq, aa_index, min_len = 8, max_len = 12) {
+  peptides <- data.frame(length = integer(),
+                         start_AA = integer(),
+                         peptideSeq = character(),
+                         stringsAsFactors = FALSE)
+  seq_length <- length(aa_seq)
+  
+  for (L in min_len:max_len) {
+    possible_starts <- (aa_index - (L - 1)):aa_index
+    for (s in possible_starts) {
+      e <- s + L - 1
+      if (s >= 1 && e <= seq_length) {
+        pep <- as.character(subseq(aa_seq, start = s, end = e))
+        peptides <- rbind(peptides, data.frame(length = L, start_AA = s,
+                                               peptideSeq = pep, stringsAsFactors = FALSE))
+      }
+    }
+  }
+  peptides <- unique(peptides)
+  return(peptides)
+}
+
+```
+
+## Obtain final data frame
+```{r}
+all_results <- list()
+
+for (tx_id in names(skip_cdna_set)) {
+  this_cdna <- skip_cdna_set[[tx_id]]
+  aa_seq <- translateSkippingIsoform(this_cdna)
+  
+  # Retrieve original exon
+  exons_for_tx <- exonsBy(EnsDb.Hsapiens.v103, by = "tx",
+                          filter = TxIdFilter(tx_id))[[1]]
+  
+  # Filter SE
+  hits <- which(start(exons_for_tx) == (se_row$exonStart_0base + 1) &
+                  end(exons_for_tx) == se_row$exonEnd)
+  exons_skip <- exons_for_tx[-hits]
+  exons_skip <- sort(exons_skip)
+  
+  chr_strand <- as.character(strand(exons_skip)[1])
+  junction_info <- findJunctionAADist(exons_skip, chr_strand, se_row)
+  aa_index <- junction_info$aa_index
+  
+  neopep_df <- tileNeoepitopes(aa_seq, aa_index, min_len = 8, max_len = 12)
+  neopep_df$transcript <- tx_id
+  neopep_df$gene <- se_row$geneSymbol
+  neopep_df$aa_index <- aa_index
+  neopep_df$event_id <- se_row$ID
+  
+  all_results[[tx_id]] <- neopep_df
+}
+
+final_neoepitopes <- do.call(rbind, all_results)
+rownames(final_neoepitopes) <- NULL
+head(final_neoepitopes)
 
 ```
 
