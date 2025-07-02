@@ -1,0 +1,199 @@
+---
+title: "Splicing variant peptide generator"
+author: "Daniel Guevara"
+date: "2025-06-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Call libraries
+```{r}
+library(GenomicFeatures)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(Biostrings)
+library(GenomicRanges)
+```
+
+## Build Reference
+```{r}
+txdb <- makeTxDbFromGFF("GRCh38.103.gtf", format="gtf")
+```
+
+## Build isoform cDNA
+```{r}
+buildSkippingIsoformCDNA <- function(se_row, tx_table = tx_tab, edb = EnsDb.Hsapiens.v103,
+                                     bsgenome = BSgenome.Hsapiens.UCSC.hg38)
+{
+  # Extract rMATS coordinates
+  chr <- as.character(se_row$chr)
+  se_start <- se_row$exonStart_0base + 1
+  se_end <- se_row$exonEnd
+  
+  gene_sym <- as.character(se_row$geneSymbol)
+  
+  # Filter ensemblDB
+  transcripts_for_gene <- tx_table[tx_table$symbol == gene_sym, "transcriptID"]
+  transcripts_for_gene <- unique(as.character(transcripts_for_gene))
+  
+  if (length(transcripts_for_gene) == 0) {
+    stop("No transcriptID for symbol ", gene_sym)
+  }
+  
+  # Obtain exon GRangesList by transcriptIDs
+  exon_list_all <- exonsBy(edb, by = "tx", filter = TxIdFilter(transcripts_for_gene))
+  
+  skip_cdna_list <- DNAStringSet()
+  
+  # Process exons
+  for (tx_id in names(exon_list_all)) {
+    exons_of_tx <- exon_list_all[[tx_id]]
+    
+    # Verify if any exon exactly matches the SE
+    hits <- which(
+      as.character(seqnames(exons_of_tx)) == chr &
+      start(exons_of_tx) == se_start &
+      end(exons_of_tx) == se_end
+    )
+    if (length(hits) == 0) {
+      next
+    }
+    
+    # Remove identified exon
+    exons_skip <- exons_of_tx[-hits]
+    exons_skip <- sort(exons_skip)
+    
+    # Extract DNA from concatenated exons
+    chr_seq <- bsgenome[[as.character(seqnames(exons_skip)[1])]]
+    ranges_list <- GRanges(
+      seqnames = seqnames(exons_skip),
+      ranges = IRanges(start = start(exons_skip),
+                       end = end(exons_skip)),
+      strand = strand(exons_skip)
+    )
+    cds_dna <- getSeq(bsgenome, ranges_list)
+    skip_cdna <- do.call(xscat, as.list(cds_dna))
+    
+    # Managing reverse compiment (- strand)
+    tx_strand <- as.character(strand(exons_skip)[1])
+    if (tx_strand == "-") {
+      skip_cdna <- reverseComplement(skip_cdna)
+    }
+    
+    # Save transcript ID
+    skip_cdna_list <- append(skip_cdna_list, skip_cdna)
+    names(skip_cdna_list)[length(skip_cdna_list)] <- tx_id
+  }
+  
+  if (length(skip_cdna_list) == 0) {
+    warning("No transcript from ", gene_sym, " contained coordinates: ", se_start, "-", se_end, ".")
+  }
+  return(skip_cdna_list)
+}
+```
+
+## Function to tile peptides
+```{r}
+i <- 23083
+se_row <- res.SE.JC.sig[i, ]
+
+# Generate skipped isoform
+skip_cdna_set <- buildSkippingIsoformCDNA(se_row)
+
+# Translate isoform
+translateSkippingIsoform <- function(skip_cdna) {
+  rna_seq <- RNAString(skip_cdna)
+  aa_seq  <- translate(rna_seq, if.fuzzy.codon="solve")
+  return(aa_seq)
+}
+
+# Get junction coordinates
+findJunctionAADist <- function(skipped_exons_gr, tx_strand, se_row) {
+  exon_widths <- width(skipped_exons_gr)
+  
+  de_start <- se_row$downstreamES
+  de_idx <- which(start(skipped_exons_gr) <= de_start & end(skipped_exons_gr) >= de_start)
+  if (length(de_idx) != 1) {
+    stop("Downstream exon not identified for: ", se_row$geneSymbol)
+  }
+  
+  if (tx_strand == "+") {
+    offset_within_de <- de_start - start(skipped_exons_gr[de_idx]) + 1
+  } else {
+    offset_within_de <- end(skipped_exons_gr[de_idx]) - de_start + 1
+  }
+  
+  if (de_idx > 1) {
+    total_bases_before <- sum(exon_widths[1:(de_idx-1)]) + offset_within_de - 1
+  } else {
+    total_bases_before <- offset_within_de - 1
+  }
+  
+  aa_pos <- floor(total_bases_before / 3) + 1
+  return(list(n_bases = total_bases_before, aa_index = aa_pos))
+}
+
+# Tile neoepitopes
+tileNeoepitopes <- function(aa_seq, aa_index, min_len = 8, max_len = 12) {
+  peptides <- data.frame(length = integer(),
+                         start_AA = integer(),
+                         peptideSeq = character(),
+                         stringsAsFactors = FALSE)
+  seq_length <- length(aa_seq)
+  
+  for (L in min_len:max_len) {
+    possible_starts <- (aa_index - (L - 1)):aa_index
+    for (s in possible_starts) {
+      e <- s + L - 1
+      if (s >= 1 && e <= seq_length) {
+        pep <- as.character(subseq(aa_seq, start = s, end = e))
+        peptides <- rbind(peptides, data.frame(length = L, start_AA = s,
+                                               peptideSeq = pep, stringsAsFactors = FALSE))
+      }
+    }
+  }
+  peptides <- unique(peptides)
+  return(peptides)
+}
+
+```
+
+## Obtain final data frame
+```{r}
+all_results <- list()
+
+for (tx_id in names(skip_cdna_set)) {
+  this_cdna <- skip_cdna_set[[tx_id]]
+  aa_seq <- translateSkippingIsoform(this_cdna)
+  
+  # Retrieve original exon
+  exons_for_tx <- exonsBy(EnsDb.Hsapiens.v103, by = "tx",
+                          filter = TxIdFilter(tx_id))[[1]]
+  
+  # Filter SE
+  hits <- which(start(exons_for_tx) == (se_row$exonStart_0base + 1) &
+                  end(exons_for_tx) == se_row$exonEnd)
+  exons_skip <- exons_for_tx[-hits]
+  exons_skip <- sort(exons_skip)
+  
+  chr_strand <- as.character(strand(exons_skip)[1])
+  junction_info <- findJunctionAADist(exons_skip, chr_strand, se_row)
+  aa_index <- junction_info$aa_index
+  
+  neopep_df <- tileNeoepitopes(aa_seq, aa_index, min_len = 8, max_len = 12)
+  neopep_df$transcript <- tx_id
+  neopep_df$gene <- se_row$geneSymbol
+  neopep_df$aa_index <- aa_index
+  neopep_df$event_id <- se_row$ID
+  
+  all_results[[tx_id]] <- neopep_df
+}
+
+final_neoepitopes <- do.call(rbind, all_results)
+rownames(final_neoepitopes) <- NULL
+head(final_neoepitopes)
+
+```
+

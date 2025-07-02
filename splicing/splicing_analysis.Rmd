@@ -11,11 +11,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # 1. Call libraries
 ```{r}
+library(dplyr)
+library(tidyr)
+library(stringr)
 library(ggplot2)
 library(ggrepel)
 library(patchwork)
 library(pheatmap)
 library(openxlsx)
+library(OmicsKit)
 ```
 
 # 2. Setup directories
@@ -59,7 +63,7 @@ res.A5SS.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/A5
 res.A5SS.JCEC.sig <- res.A5SS.JCEC[res.A5SS.JCEC$FDR < 0.01 & abs(res.A5SS.JCEC$IncLevelDifference) >= 0.05, ]
 ```
 
-## Correlation of results
+## 3.1 Correlation of count models
 ```{r}
 psi_correlation <- function(df1, df2, columns = c("ID", "geneSymbol", "IncLevelDifference"),
                             cutoff = 0.4, title, p_size = 2.5, p_shape = 20)
@@ -106,6 +110,97 @@ psi_correlation(df1 = res.RI.JC.sig, df2 = res.RI.JCEC.sig, title = "Retained In
 psi_correlation(df1 = res.A3SS.JC.sig, df2 = res.A3SS.JCEC.sig, title = "Alt. 3' Splice Sites", cutoff = 0.2)
 psi_correlation(df1 = res.A5SS.JC.sig, df2 = res.A5SS.JCEC.sig, title = "Alt. 5' Splice Sites", cutoff = 0.2)
 
+
+```
+
+## 3.2 Detectable results
+```{r}
+# A) Plot counts
+nice_Hist <- function(counts, mean = "Mean", thresholds = c(seq(0, 2, 0.5), 3, 5), xlim = 50, bin = 1, ytick = 2500) {
+  levels_vector <- c(paste0("= ", thresholds[1]), paste0("<= ", thresholds[2]), paste0("<= ", thresholds[3]),
+                     paste0("<= ", thresholds[4]), paste0("<= ", thresholds[5]), paste0("<= ", thresholds[6]),
+                     paste0("<= ", thresholds[7]), paste0("> ", thresholds[7]))
+  
+  counts <- counts %>% mutate(category = case_when(.data[[mean]] == thresholds[1] ~ levels_vector[1],
+                                                   .data[[mean]] <= thresholds[2] ~ levels_vector[2],
+                                                   .data[[mean]] <= thresholds[3] ~ levels_vector[3],
+                                                   .data[[mean]] <= thresholds[4] ~ levels_vector[4],
+                                                   .data[[mean]] <= thresholds[5] ~ levels_vector[5],
+                                                   .data[[mean]] <= thresholds[6] ~ levels_vector[6],
+                                                   .data[[mean]] <= thresholds[7] ~ levels_vector[7],
+                                                   TRUE ~ levels_vector[8]))
+  
+  counts$category <- factor(counts$category, levels = levels_vector)
+  
+  fill_colors <- setNames(c("#00004F", "#6000C6", "#B3A3FF", "steelblue", "#608FE6", "#85C0FF", "grey70", "white"), levels_vector)
+  
+  plot <- ggplot(counts[counts[[mean]] <= xlim, ], aes(x = .data[[mean]], fill = category)) +
+    geom_histogram(binwidth = bin, color = "black", position = "stack") + theme_bw() +
+    xlab("Mean Normalized Counts") + ylab("Frequency") +
+    scale_x_continuous(breaks = seq(0, xlim, by = 5)) +
+    scale_y_continuous(breaks = seq(0, max(counts[[mean]]), by = ytick)) +
+    scale_fill_manual(values = fill_colors, name = "Counts") +
+    theme(strip.text = element_text(size = 14), axis.text = element_text(size = 12),
+          axis.title = element_text(size = 16), legend.title = element_text(size = 14),
+          legend.text = element_text(size = 12))
+  
+  return(plot)
+}
+
+skipping_counts <- res.SE.JCEC[, c("SJC_SAMPLE_1", "SJC_SAMPLE_2")]
+inclusion_counts <- res.SE.JCEC[, c("IJC_SAMPLE_1", "IJC_SAMPLE_2")]
+
+max(str_count(skipping_counts$SJC_SAMPLE_1, ",") + 1)
+max(str_count(skipping_counts$SJC_SAMPLE_2, ",") + 1)
+
+skipping_counts <- skipping_counts %>%
+  separate(SJC_SAMPLE_1, into = paste0("SJC_SAMPLE_1_", 1:5), sep = ",", fill = "right", convert = TRUE) %>%
+  separate(SJC_SAMPLE_2, into = paste0("SJC_SAMPLE_2_", 1:15), sep = ",", fill = "right", convert = TRUE)
+colnames(skipping_counts) <- colnames$label
+
+inclusion_counts <- inclusion_counts %>%
+  separate(IJC_SAMPLE_1, into = paste0("IJC_SAMPLE_1_", 1:5), sep = ",", fill = "right", convert = TRUE) %>%
+  separate(IJC_SAMPLE_2, into = paste0("IJC_SAMPLE_2_", 1:15), sep = ",", fill = "right", convert = TRUE)
+colnames(inclusion_counts) <- colnames$label
+
+skipping_counts$Mean.N <- rowMeans(skipping_counts[, colnames$label[colnames$group == "Normal"]])
+skipping_counts$Mean.T <- rowMeans(skipping_counts[, colnames$label[colnames$group == "Tumor"]])
+skipping_counts$Mean <- rowMeans(skipping_counts[, colnames$label])
+skipping_counts[, c("GeneID", "geneSymbol", "ID")] <- res.SE.JCEC[, c("GeneID", "geneSymbol", "ID")]
+rownames(skipping_counts) <- skipping_counts$ID
+
+inclusion_counts$Mean.N <- rowMeans(inclusion_counts[, colnames$label[colnames$group == "Normal"]])
+inclusion_counts$Mean.T <- rowMeans(inclusion_counts[, colnames$label[colnames$group == "Tumor"]])
+inclusion_counts$Mean <- rowMeans(inclusion_counts[, colnames$label])
+inclusion_counts[, c("GeneID", "geneSymbol", "ID")] <- res.SE.JCEC[, c("GeneID", "geneSymbol", "ID")]
+rownames(inclusion_counts) <- inclusion_counts$ID
+
+## Plot distributions
+nice_Hist(skipping_counts, ytick = 7500) + xlab("Skipping Counts")
+nice_Hist(inclusion_counts, , ytick = 1000) + xlab("Inclusion Counts")
+
+# B) Create detectability filter
+res.SE.JCEC.det <- res.SE.JCEC.sig[res.SE.JCEC.sig$ID %in% skipping_counts$ID[skipping_counts$Mean > 50], ]
+rownames(res.SE.JCEC.det) <- res.SE.JCEC.det$ID
+res.SE.JCEC.det$ID <- as.character(res.SE.JCEC.det$ID)
+
+detectable_ids <- c()
+for (i in res.SE.JCEC.det$ID) {
+  if (res.SE.JCEC.det[i, "IncLevelDifference"] > 0) {
+    if (skipping_counts[i, "Mean.T"] > 50) {
+      detectable_ids <- c(detectable_ids, i)
+    }
+  } else if (res.SE.JCEC.det[i, "IncLevelDifference"] < 0) {
+    if (skipping_counts[i, "Mean.N"] > 50) {
+      detectable_ids <- c(detectable_ids, i)
+    }
+  }
+}
+
+res.SE.JCEC.det <- res.SE.JCEC.det[detectable_ids, ]
+
+write.table(res.SE.JCEC.det[res.SE.JCEC.det$IncLevelDifference > 0, 2:11],
+            file = "SE_variants.txt", sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
 
 ```
 
@@ -171,7 +266,6 @@ volcano_plot <- function(results, x_max = 1, y_max = 6, cutoff_signif = 0.05, cu
   # Fixed variables
   sig_nice <- cutoff_signif/5
   chg_nice <- cutoff_change*4
-  #chg_nice <- cutoff_change*2
   
   # Manage data
   d.volcano <- data.frame(results)
@@ -375,198 +469,3 @@ count_shared_events <- function(df, psi_col, group) {
 
 
 ```
-
-# 8. Map peptides to splicing variants
-## Call libraries
-```{r}
-library(GenomicFeatures)
-library(BSgenome.Hsapiens.UCSC.hg38)
-library(Biostrings)
-library(GenomicRanges)
-```
-
-
-## Read reference
-```{r}
-tx_tab <- data.frame(read.xlsx("../../../Documents/Articles/CCC/tx2gene_GRCh38v103.xlsx"))
-gtf_file <- "GRCh38.103.gtf"
-
-txdb <- txdbmaker::makeTxDbFromGFF(file = gtf_file, format = "gtf",
-                                   organism = "Homo sapiens", dataSource = "Ensembl_103")
-```
-
-## Build isoform cDNA
-```{r}
-buildSkippingIsoformCDNA <- function(se_row, tx_table = tx_tab, edb = EnsDb.Hsapiens.v103,
-                                     bsgenome = BSgenome.Hsapiens.UCSC.hg38)
-{
-  # Extract rMATS coordinates
-  chr <- as.character(se_row$chr)
-  se_start <- se_row$exonStart_0base + 1
-  se_end <- se_row$exonEnd
-  
-  gene_sym <- as.character(se_row$geneSymbol)
-  
-  # Filter ensemblDB
-  transcripts_for_gene <- tx_table[tx_table$symbol == gene_sym, "transcriptID"]
-  transcripts_for_gene <- unique(as.character(transcripts_for_gene))
-  
-  if (length(transcripts_for_gene) == 0) {
-    stop("No transcriptID for symbol ", gene_sym)
-  }
-  
-  # Obtain exon GRangesList by transcriptIDs
-  exon_list_all <- exonsBy(edb, by = "tx", filter = TxIdFilter(transcripts_for_gene))
-  
-  skip_cdna_list <- DNAStringSet()
-  
-  # Process exons
-  for (tx_id in names(exon_list_all)) {
-    exons_of_tx <- exon_list_all[[tx_id]]
-    
-    # Verify if any exon exactly matches the SE
-    hits <- which(
-      as.character(seqnames(exons_of_tx)) == chr &
-      start(exons_of_tx) == se_start &
-      end(exons_of_tx) == se_end
-    )
-    if (length(hits) == 0) {
-      next
-    }
-    
-    # Remove identified exon
-    exons_skip <- exons_of_tx[-hits]
-    exons_skip <- sort(exons_skip)
-    
-    # Extract DNA from concatenated exons
-    chr_seq <- bsgenome[[as.character(seqnames(exons_skip)[1])]]
-    ranges_list <- GRanges(
-      seqnames = seqnames(exons_skip),
-      ranges = IRanges(start = start(exons_skip),
-                       end = end(exons_skip)),
-      strand = strand(exons_skip)
-    )
-    cds_dna <- getSeq(bsgenome, ranges_list)
-    skip_cdna <- do.call(xscat, as.list(cds_dna))
-    
-    # Managing reverse compiment (- strand)
-    tx_strand <- as.character(strand(exons_skip)[1])
-    if (tx_strand == "-") {
-      skip_cdna <- reverseComplement(skip_cdna)
-    }
-    
-    # Save transcript ID
-    skip_cdna_list <- append(skip_cdna_list, skip_cdna)
-    names(skip_cdna_list)[length(skip_cdna_list)] <- tx_id
-  }
-  
-  if (length(skip_cdna_list) == 0) {
-    warning("No transcript from ", gene_sym, " contained coordinates: ", se_start, "-", se_end, ".")
-  }
-  return(skip_cdna_list)
-}
-```
-
-## Function to tile peptides
-```{r}
-i <- 23083
-se_row <- res.SE.JC.sig[i, ]
-
-# Generate skipped isoform
-skip_cdna_set <- buildSkippingIsoformCDNA(se_row)
-
-# Translate isoform
-translateSkippingIsoform <- function(skip_cdna) {
-  rna_seq <- RNAString(skip_cdna)
-  aa_seq  <- translate(rna_seq, if.fuzzy.codon="solve")
-  return(aa_seq)
-}
-
-# Get junction coordinates
-findJunctionAADist <- function(skipped_exons_gr, tx_strand, se_row) {
-  exon_widths <- width(skipped_exons_gr)
-  
-  de_start <- se_row$downstreamES
-  de_idx <- which(start(skipped_exons_gr) <= de_start & end(skipped_exons_gr) >= de_start)
-  if (length(de_idx) != 1) {
-    stop("Downstream exon not identified for: ", se_row$geneSymbol)
-  }
-  
-  if (tx_strand == "+") {
-    offset_within_de <- de_start - start(skipped_exons_gr[de_idx]) + 1
-  } else {
-    offset_within_de <- end(skipped_exons_gr[de_idx]) - de_start + 1
-  }
-  
-  if (de_idx > 1) {
-    total_bases_before <- sum(exon_widths[1:(de_idx-1)]) + offset_within_de - 1
-  } else {
-    total_bases_before <- offset_within_de - 1
-  }
-  
-  aa_pos <- floor(total_bases_before / 3) + 1
-  return(list(n_bases = total_bases_before, aa_index = aa_pos))
-}
-
-# Tile neoepitopes
-tileNeoepitopes <- function(aa_seq, aa_index, min_len = 8, max_len = 12) {
-  peptides <- data.frame(length = integer(),
-                         start_AA = integer(),
-                         peptideSeq = character(),
-                         stringsAsFactors = FALSE)
-  seq_length <- length(aa_seq)
-  
-  for (L in min_len:max_len) {
-    possible_starts <- (aa_index - (L - 1)):aa_index
-    for (s in possible_starts) {
-      e <- s + L - 1
-      if (s >= 1 && e <= seq_length) {
-        pep <- as.character(subseq(aa_seq, start = s, end = e))
-        peptides <- rbind(peptides, data.frame(length = L, start_AA = s,
-                                               peptideSeq = pep, stringsAsFactors = FALSE))
-      }
-    }
-  }
-  peptides <- unique(peptides)
-  return(peptides)
-}
-
-```
-
-## Obtain final data frame
-```{r}
-all_results <- list()
-
-for (tx_id in names(skip_cdna_set)) {
-  this_cdna <- skip_cdna_set[[tx_id]]
-  aa_seq <- translateSkippingIsoform(this_cdna)
-  
-  # Retrieve original exon
-  exons_for_tx <- exonsBy(EnsDb.Hsapiens.v103, by = "tx",
-                          filter = TxIdFilter(tx_id))[[1]]
-  
-  # Filter SE
-  hits <- which(start(exons_for_tx) == (se_row$exonStart_0base + 1) &
-                  end(exons_for_tx) == se_row$exonEnd)
-  exons_skip <- exons_for_tx[-hits]
-  exons_skip <- sort(exons_skip)
-  
-  chr_strand <- as.character(strand(exons_skip)[1])
-  junction_info <- findJunctionAADist(exons_skip, chr_strand, se_row)
-  aa_index <- junction_info$aa_index
-  
-  neopep_df <- tileNeoepitopes(aa_seq, aa_index, min_len = 8, max_len = 12)
-  neopep_df$transcript <- tx_id
-  neopep_df$gene <- se_row$geneSymbol
-  neopep_df$aa_index <- aa_index
-  neopep_df$event_id <- se_row$ID
-  
-  all_results[[tx_id]] <- neopep_df
-}
-
-final_neoepitopes <- do.call(rbind, all_results)
-rownames(final_neoepitopes) <- NULL
-head(final_neoepitopes)
-
-```
-
