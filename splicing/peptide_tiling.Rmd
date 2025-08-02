@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Call libraries
+# 1. Call libraries
 ```{r}
 library(GenomicFeatures)
 library(BSgenome.Hsapiens.UCSC.hg38)
@@ -17,10 +17,42 @@ library(Biostrings)
 library(GenomicRanges)
 ```
 
-## Build Reference
+# 2. Build Reference
 ```{r}
 txdb <- makeTxDbFromGFF("GRCh38.103.gtf", format="gtf")
 ```
+
+# 3. Generate translated peptides
+```{r}
+SE.JCEC.df <- read.csv("results/all_samples_variable_ind/output/SE.MATS.JCEC.txt", sep = "\t")
+SE.JCEC.df <- SE.JCEC.df[SE.JCEC.df$geneSymbol == "SLC7A2" & SE.JCEC.df$FDR < 0.05, ]
+
+# Build skipped isoform
+up <- GRanges("chr18", IRanges(start=upstreamES+1, end=upstreamEE), strand=strand)
+down <- GRanges("chr18", IRanges(start=downstreamES+1, end=downstreamEE), strand=strand)
+
+up <- GRanges("chr8", IRanges(start=17554559+1, end=17554699), strand="+")
+down <- GRanges("chr8", IRanges(start=17558294+1, end=17558397), strand="+")
+
+grl <- GRangesList(skipEvent = c(up, down))
+
+# Translate isoform
+cdna <- extractTranscriptSeqs(BSgenome.Hsapiens.UCSC.hg38, grl)
+prot <- translate(cdna)
+
+se_range <- GRanges("8", IRanges(17554945+1, 17555082), strand="+")
+txs <- transcriptsBy(txdb, by="gene")[["ENSG00000003989"]]
+tx_chosen <- txs[which(txs %over% se_range)]
+
+original_form <- IRanges(unlist(strsplit(tx_chose$ranges[1], "-"))[1]+1, unlist(strsplit(tx_chose$ranges[1], "-"))[2])
+splicing_form <- 
+```
+
+# 4. Tile across splicing junctions
+```{r}
+
+```
+
 
 ## Build isoform cDNA
 ```{r}

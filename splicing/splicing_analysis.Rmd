@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # 1. Call libraries
 ```{r}
+library(scales)
 library(dplyr)
 library(tidyr)
 library(stringr)
@@ -22,98 +23,226 @@ library(openxlsx)
 library(OmicsKit)
 ```
 
-# 2. Setup directories
+# 2. Setup
 ```{r}
-working_dir <- "~/github/HLA-I_Analysis/splicing"
-setwd(working_dir)
+setwd("~/github/HLA-I_Analysis/splicing")
+
+colnames <- data.frame(label = c("51N", "57N", "59N", "63N", "148N",
+                                 "51P", "51M1", "51M2", "51M3", "57M", "59P", "59M",
+                                 "62M", "63R", "88M1", "88M2", "117M", "123M", "148P1", "148P2"),
+                       group = c(rep("Normal", 5), rep("Tumor", 15)))
 ```
 
 # 3. Retrieve splicing results
 ```{r}
 # JC model
-res.SE.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/SE.MATS.JC.txt", sep = "\t"))
-res.SE.JC.sig <- res.SE.JC[res.SE.JC$FDR < 0.01 & abs(res.SE.JC$IncLevelDifference) >= 0.05, ]
+res.SE.JC <- read.csv("results/all_samples_variable_ind/output/SE.MATS.JC.txt", sep = "\t")
+res.SE.JC.sig <- res.SE.JC[res.SE.JC$FDR < 0.05 & abs(res.SE.JC$IncLevelDifference) >= 0.05, ]
 
-res.MXE.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/MXE.MATS.JC.txt", sep = "\t"))
-res.MXE.JC.sig <- res.MXE.JC[res.MXE.JC$FDR < 0.01 & abs(res.MXE.JC$IncLevelDifference) >= 0.05, ]
+res.MXE.JC <- read.csv("results/all_samples_variable_ind/output/MXE.MATS.JC.txt", sep = "\t")
+res.MXE.JC.sig <- res.MXE.JC[res.MXE.JC$FDR < 0.05 & abs(res.MXE.JC$IncLevelDifference) >= 0.05, ]
 
-res.RI.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/RI.MATS.JC.txt", sep = "\t"))
-res.RI.JC.sig <- res.RI.JC[res.RI.JC$FDR < 0.01 & abs(res.RI.JC$IncLevelDifference) >= 0.05, ]
+res.RI.JC <- read.csv("results/all_samples_variable_ind/output/RI.MATS.JC.txt", sep = "\t")
+res.RI.JC.sig <- res.RI.JC[res.RI.JC$FDR < 0.05 & abs(res.RI.JC$IncLevelDifference) >= 0.05, ]
 
-res.A3SS.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JC.txt", sep = "\t"))
-res.A3SS.JC.sig <- res.A3SS.JC[res.A3SS.JC$FDR < 0.01 & abs(res.A3SS.JC$IncLevelDifference) >= 0.05, ]
+res.A3SS.JC <- read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JC.txt", sep = "\t")
+res.A3SS.JC.sig <- res.A3SS.JC[res.A3SS.JC$FDR < 0.05 & abs(res.A3SS.JC$IncLevelDifference) >= 0.05, ]
 
-res.A5SS.JC <- data.frame(read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JC.txt", sep = "\t"))
-res.A5SS.JC.sig <- res.A5SS.JC[res.A5SS.JC$FDR < 0.01 & abs(res.A5SS.JC$IncLevelDifference) >= 0.05, ]
+res.A5SS.JC <- read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JC.txt", sep = "\t")
+res.A5SS.JC.sig <- res.A5SS.JC[res.A5SS.JC$FDR < 0.05 & abs(res.A5SS.JC$IncLevelDifference) >= 0.05, ]
 
 # JCEC model
-res.SE.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/SE.MATS.JCEC.txt", sep = "\t"))
-res.SE.JCEC.sig <- res.SE.JCEC[res.SE.JCEC$FDR < 0.01 & abs(res.SE.JCEC$IncLevelDifference) >= 0.05, ]
+res.SE.JCEC <- read.csv("results/all_samples_variable_ind/output/SE.MATS.JCEC.txt", sep = "\t")
+res.SE.JCEC.sig <- res.SE.JCEC[res.SE.JCEC$FDR < 0.05 & abs(res.SE.JCEC$IncLevelDifference) >= 0.05, ]
 
-res.MXE.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/MXE.MATS.JCEC.txt", sep = "\t"))
-res.MXE.JCEC.sig <- res.MXE.JCEC[res.MXE.JCEC$FDR < 0.01 & abs(res.MXE.JCEC$IncLevelDifference) >= 0.05, ]
+res.MXE.JCEC <- read.csv("results/all_samples_variable_ind/output/MXE.MATS.JCEC.txt", sep = "\t")
+res.MXE.JCEC.sig <- res.MXE.JCEC[res.MXE.JCEC$FDR < 0.05 & abs(res.MXE.JCEC$IncLevelDifference) >= 0.05, ]
 
-res.RI.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/RI.MATS.JCEC.txt", sep = "\t"))
-res.RI.JCEC.sig <- res.RI.JCEC[res.RI.JCEC$FDR < 0.01 & abs(res.RI.JCEC$IncLevelDifference) >= 0.05, ]
+res.RI.JCEC <- read.csv("results/all_samples_variable_ind/output/RI.MATS.JCEC.txt", sep = "\t")
+res.RI.JCEC.sig <- res.RI.JCEC[res.RI.JCEC$FDR < 0.05 & abs(res.RI.JCEC$IncLevelDifference) >= 0.05, ]
 
-res.A3SS.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JCEC.txt", sep = "\t"))
-res.A3SS.JCEC.sig <- res.A3SS.JCEC[res.A3SS.JCEC$FDR < 0.01 & abs(res.A3SS.JCEC$IncLevelDifference) >= 0.05, ]
+res.A3SS.JCEC <- read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JCEC.txt", sep = "\t")
+res.A3SS.JCEC.sig <- res.A3SS.JCEC[res.A3SS.JCEC$FDR < 0.05 & abs(res.A3SS.JCEC$IncLevelDifference) >= 0.05, ]
 
-res.A5SS.JCEC <- data.frame(read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JCEC.txt", sep = "\t"))
-res.A5SS.JCEC.sig <- res.A5SS.JCEC[res.A5SS.JCEC$FDR < 0.01 & abs(res.A5SS.JCEC$IncLevelDifference) >= 0.05, ]
+res.A5SS.JCEC <- read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JCEC.txt", sep = "\t")
+res.A5SS.JCEC.sig <- res.A5SS.JCEC[res.A5SS.JCEC$FDR < 0.05 & abs(res.A5SS.JCEC$IncLevelDifference) >= 0.05, ]
+
+# Final data frames
+res.SE <- res.SE.JCEC[res.SE.JCEC$ID %in% intersect(res.SE.JC$ID, res.SE.JCEC$ID), ]
+res.MXE <- res.MXE.JCEC[res.MXE.JCEC$ID %in% intersect(res.MXE.JC$ID, res.MXE.JCEC$ID), ]
+res.RI <- res.RI.JCEC[res.RI.JCEC$ID %in% intersect(res.RI.JC$ID, res.RI.JCEC$ID), ]
+res.A3SS <- res.A3SS.JCEC[res.A3SS.JCEC$ID %in% intersect(res.A3SS.JC$ID, res.A3SS.JCEC$ID), ]
+res.A5SS <- res.A5SS.JCEC[res.A5SS.JCEC$ID %in% intersect(res.A5SS.JC$ID, res.A5SS.JCEC$ID), ]
 ```
 
-## 3.1 Correlation of count models
+## 3.1 Distribution of PSI
+```{r}
+delta_df <- rbind(res.SE[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.MXE[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.RI[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.A3SS[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.A5SS[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")])
+delta_df$event <- c(rep("Skipped Exon", nrow(res.SE)),
+                    rep("Mutually Exclusive Exons", nrow(res.MXE)),
+                    rep("Retained Intron", nrow(res.RI)),
+                    rep("Alt. 3' Splice Site", nrow(res.A3SS)),
+                    rep("Alt. 5' Splice Site", nrow(res.A5SS)))
+delta_df$event <- factor(delta_df$event, levels = unique(delta_df$event))
+
+delta_df <- delta_df %>%
+  mutate(sig = -log10(FDR)) %>%
+  mutate(sig = if_else(is.infinite(sig), max(sig[is.finite(sig)]) + 1, sig))
+
+sig_df <- delta_df[delta_df$FDR < 0.05, ]
+sig_df <- delta_df
+
+# Statistical analysis
+kruskal.test(IncLevelDifference ~ event, data = sig_df)
+pairwise.wilcox.test(sig_df$IncLevelDifference, sig_df$event, p.adjust.method = "BH")
+FSA::dunnTest(IncLevelDifference ~ event, data = sig_df, method = "bh")
+
+# Plot
+max_val <- max(delta_df$sig)
+
+ggplot(sig_df, aes(x = event, y = IncLevelDifference)) + theme_bw() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_boxplot(width = 0.5, fill = "grey90", outlier.shape = NA) +
+  geom_errorbar(stat = "boxplot", width = 0.7, linewidth = 0.7, color = "blue",
+                aes(ymin = after_stat(middle), ymax = after_stat(middle))) +
+  geom_jitter(aes(fill = sig), shape = 21, width = 0.15, size = 2.5, alpha = 1, show.legend = TRUE) +
+  scale_fill_gradientn(name = expression(-log[10]~"(FDR)"), colors = c("white", "red", "firebrick4"),
+                       values = rescale(c(0, max_val-1, max_val)), breaks = seq(0, 12, 3),
+                       guide = guide_colorbar(direction = "horizontal", position = "inside",
+                                              barwidth = unit(4, "cm"), barheight = unit(0.4, "cm"))) +
+  scale_y_continuous(breaks = seq(-0.8,0.8,0.4), limits = c(-0.8, 0.8)) +
+  labs(y = "ΔPSI (Tumor – Normal)") +
+  theme(axis.text.x = element_text(size = 12, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_blank(), axis.title.y = element_text(size = 14),
+        legend.title = element_text(size = 12), legend.text = element_text(size = 10),
+        legend.position.inside = c(0.8, 0.9),
+        legend.background = element_rect(color = "black"))
+
+ggsave("figures/Delta_PSI_Distribution_Splicing_Events_FDR_0.05.jpg", width = 9, height = 6, dpi = 300)
+ggsave("figures/Delta_PSI_Distribution_Splicing_Events_FDR_0.05_PSI_0.05.jpg", width = 9, height = 6, dpi = 300)
+```
+
+## 3.2 Correlation of count models
 ```{r}
 psi_correlation <- function(df1, df2, columns = c("ID", "geneSymbol", "IncLevelDifference"),
-                            cutoff = 0.4, title, p_size = 2.5, p_shape = 20)
+                            title, p_size = 1, p_shape = 20, label = FALSE, cutoff = NULL)
 {
   # Integrate data frames
   merged_df <- merge(df1[, columns], df2[, columns],
                      by = columns[1:2], suffixes = c("_JC", "_JCEC"))
   
-  # Create label data frame
-  label_df <- subset(merged_df,
-                     abs(IncLevelDifference_JC) >= cutoff | abs(IncLevelDifference_JCEC) >= cutoff)
-  
-  label_df$nudge_y <- ifelse(label_df$IncLevelDifference_JCEC > label_df$IncLevelDifference_JC,
-                             0.08, -0.08)
+  # Annotation position
+  x_rng <- range(merged_df$IncLevelDifference_JC, na.rm = TRUE)
+  y_rng <- range(merged_df$IncLevelDifference_JCEC, na.rm = TRUE)
+  x_pos <- x_rng[2] - 0.15 * diff(x_rng)   # 5% in from left
+  y_pos <- y_rng[1] + 0.08 * diff(y_rng)   # 5% down from top
   
   # Pearson correlation
-  cor_test <- cor.test(merged_df$IncLevelDifference_JC,
-                       merged_df$IncLevelDifference_JCEC, method = "pearson")
+  cor_test <- cor.test(merged_df$IncLevelDifference_JC, merged_df$IncLevelDifference_JCEC, method = "pearson")
   r_squared <- round(cor_test$estimate^2, 3)
   
   # Plotting
   plot <- ggplot(merged_df, aes(x = IncLevelDifference_JC, y = IncLevelDifference_JCEC)) +
-    geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
     geom_point(alpha = 0.7, size = p_size, shape = p_shape) + theme_bw() +
-    annotate("text", x = 0.6, y = -0.6, label = paste0("R² = ", r_squared), size = 4, hjust = 0) +
-    geom_label_repel(data = label_df, aes(label = geneSymbol), size = 3,
-                     nudge_y = label_df$nudge_y, segment.alpha = 0.5, segment.size = 0.3,
-                     box.padding = unit(0.4, "lines"), point.padding = unit(0.3, "lines"),
-                     max.overlaps = Inf, show.legend = FALSE) +
+    geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
+    annotate(geom = "point", x = 0, y = 0, color = "red", fill = "white", size = p_size+1, shape = 21) +
+    annotate("text", x = x_pos, y = y_pos, label = paste0("R² = ", r_squared), size = 4, hjust = 0) +
     labs(title = title,
-         x = expression(Delta*"PSI"*" - Junction Count"),
-         y = expression(Delta*"PSI"*" - Junction & Exon Count")) +
+         x = expression(Delta*" PSI"*" - Junction Count"),
+         y = expression(Delta*" PSI"*" - Junction & Exon Count")) +
+    scale_x_continuous(breaks = seq(-0.8, 0.8, 0.4)) +
+    scale_y_continuous(breaks = seq(-0.8, 0.8, 0.4)) +
     coord_cartesian(xlim = c(min(merged_df$IncLevelDifference_JC) - 0.1,
-                             max(merged_df$IncLevelDifference_JC) + 0.1),
+                             max(merged_df$IncLevelDifference_JC)   + 0.1),
                     ylim = c(min(merged_df$IncLevelDifference_JCEC) - 0.1,
                              max(merged_df$IncLevelDifference_JCEC) + 0.1))
   
+  if (label) {
+    label_df <- subset(merged_df, abs(IncLevelDifference_JC) >= cutoff | abs(IncLevelDifference_JCEC) >= cutoff)
+    label_df$nudge_y <- ifelse(label_df$IncLevelDifference_JCEC > label_df$IncLevelDifference_JC, 0.08, -0.08)
+    
+    plot <- plot + geom_label_repel(data = label_df, aes(label = geneSymbol), size = 3,
+                                    nudge_y = label_df$nudge_y, segment.alpha = 0.5, segment.size = 0.3,
+                                    box.padding = unit(0.4, "lines"), point.padding = unit(0.3, "lines"),
+                                    max.overlaps = Inf, show.legend = FALSE)
+  }
+    
   return(plot)
 }
 
-psi_correlation(df1 = res.SE.JC.sig, df2 = res.SE.JCEC.sig, title = "Skipped Exon")
-psi_correlation(df1 = res.MXE.JC.sig, df2 = res.MXE.JCEC.sig, title = "Mutually Exclusive Exons", cutoff = 0.3)
-psi_correlation(df1 = res.RI.JC.sig, df2 = res.RI.JCEC.sig, title = "Retained Intron", cutoff = 0.3)
-psi_correlation(df1 = res.A3SS.JC.sig, df2 = res.A3SS.JCEC.sig, title = "Alt. 3' Splice Sites", cutoff = 0.2)
-psi_correlation(df1 = res.A5SS.JC.sig, df2 = res.A5SS.JCEC.sig, title = "Alt. 5' Splice Sites", cutoff = 0.2)
+psi_correlation(df1 = res.SE.JC[res.SE.JC$ID %in% res.SE$ID, ],
+                df2 = res.SE.JCEC[res.SE.JCEC$ID %in% res.SE$ID, ], title = "Skipped Exon")
+psi_correlation(df1 = res.MXE.JC[res.MXE.JC$ID %in% res.MXE$ID, ],
+                df2 = res.MXE.JCEC[res.MXE.JCEC$ID %in% res.MXE$ID, ], title = "Mutually Exclusive Exons")
+psi_correlation(df1 = res.RI.JC[res.RI.JC$ID %in% res.RI$ID, ],
+                df2 = res.RI.JCEC[res.RI.JCEC$ID %in% res.RI$ID, ], title = "Retained Intron")
+psi_correlation(df1 = res.A3SS.JC[res.A3SS.JC$ID %in% res.A3SS$ID, ],
+                df2 = res.A3SS.JCEC[res.A3SS.JCEC$ID %in% res.A3SS$ID, ], title = "Alt. 3' Splice Site")
+psi_correlation(df1 = res.A5SS.JC[res.A5SS.JC$ID %in% res.A5SS$ID, ],
+                df2 = res.A5SS.JCEC[res.A5SS.JCEC$ID %in% res.A5SS$ID, ], title = "Alt. 5' Splice Site")
 
-
+ggsave("figures/Correlation_JC_JCEC_Skipped_Exon.jpg", width = 5.5, height = 5, dpi = 300)
+ggsave("figures/Correlation_JC_JCEC_Mutually_Exclusive_Exons.jpg", width = 5.5, height = 5, dpi = 300)
+ggsave("figures/Correlation_JC_JCEC_Retained_Intron.jpg", width = 5.5, height = 5, dpi = 300)
+ggsave("figures/Correlation_JC_JCEC_Alt_3_Splice_Site.jpg", width = 5.5, height = 5, dpi = 300)
+ggsave("figures/Correlation_JC_JCEC_Alt_5_Splice_Site.jpg", width = 5.5, height = 5, dpi = 300)
 ```
 
-## 3.2 Detectable results
+## 3.3 Distribution of Counts
+```{r}
+col_annot <- colnames %>% group_by(group) %>% mutate(sample_index = row_number()) %>% ungroup()
+
+integrate_counts <- function(res, event) {
+  integrated_df <- res[, c("ID", "GeneID", "geneSymbol", "IJC_SAMPLE_1",
+                           "IJC_SAMPLE_2", "SJC_SAMPLE_1", "SJC_SAMPLE_2")] %>%
+    mutate(IJC_SAMPLE_1 = str_split(as.character(IJC_SAMPLE_1), ","),
+           IJC_SAMPLE_2 = str_split(as.character(IJC_SAMPLE_2), ","),
+           SJC_SAMPLE_1 = str_split(as.character(SJC_SAMPLE_1), ","),
+           SJC_SAMPLE_2 = str_split(as.character(SJC_SAMPLE_2), ",")) %>%
+    pivot_longer(cols = c(IJC_SAMPLE_1, IJC_SAMPLE_2, SJC_SAMPLE_1, SJC_SAMPLE_2),
+                 names_to = "level", values_to = "Counts_list") %>% unnest(Counts_list) %>%
+    group_by(ID, geneSymbol, level) %>% mutate(sample_index = row_number()) %>% ungroup() %>%
+    mutate(Counts = as.numeric(Counts_list), group = if_else(level == "IncLevel1", "Normal", "Tumor")) %>%
+    left_join(col_annot, by = c("group", "sample_index")) %>%
+    rename(sample_id = label) %>% select(ID, GeneID, geneSymbol, sample_id, group, Counts) %>%
+    mutate(event = event)
+  
+  return(integrated_df)
+}
+
+Counts.SE <- integrate_psi(res.SE.JCEC, "Skipped Exon")
+Counts.MXE <- integrate_psi(res.MXE.JCEC, "Mutually Exclusive Exons")
+Counts.RI <- integrate_psi(res.RI.JCEC, "Retained Intron")
+Counts.A3SS <- integrate_psi(res.A3SS.JCEC, "Alt. 3' Splice Site")
+Counts.A5SS <- integrate_psi(res.A5SS.JCEC, "Alt. 5' Splice Site")
+
+Counts.df <- rbind(Counts.SE, Counts.MXE, Counts.RI, Counts.A3SS, Counts.A5SS)
+
+ggplot(data = PSI.df, aes(x = group, y = PSI)) +
+  theme_bw() + facet_wrap(~event, nrow = 1) +
+  geom_boxplot(width = 0.15, fill = "grey90", outlier.shape = NA) +
+  geom_errorbar(stat = "boxplot", width = 0.4, linewidth = 1, color = "red",
+                aes(ymin = after_stat(middle), ymax = after_stat(middle))) +
+  geom_point(aes(fill = group), shape = 21, size = 3, alpha = 1,
+             show.legend = FALSE, position = position_jitter(width = 0.1)) +
+  scale_fill_manual(values = c("Normal" = "#b9ffffff", "Tumor" = "#fab8c2ff")) +
+  scale_y_continuous(breaks = function(x) seq(floor(min(x, na.rm = TRUE)),
+                                              ceiling(max(x, na.rm = TRUE)), by = 0.25)) +
+  labs(y = "Percent Spliced-In") +
+    
+    theme(strip.text = element_text(size = 17),
+          strip.background = element_blank(),
+          axis.text = element_text(size = 16),
+          axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 18))
+```
+
+## 3.4 Detectable results
 ```{r}
 # A) Plot counts
 nice_Hist <- function(counts, mean = "Mean", thresholds = c(seq(0, 2, 0.5), 3, 5), xlim = 50, bin = 1, ytick = 2500) {
@@ -366,12 +495,6 @@ pv.A5SS.JCEC <- volcano_plot(results = res.A5SS.JCEC, signif_var = "FDR", change
 
 # 6. Heatmaps by splicing event
 ```{r}
-colnames <- data.frame(label = c("51", "57", "59", "63", "148",
-                                 "51P", "51-M1", "51-M2", "51-M3", "57M", "59P", "59M",
-                                 "62M", "63R", "88-M1", "88-M2", "117M", "123M", "148-P1", "148-P2"),
-                       group = c(rep("Normal", 5), rep("Tumor", 15)))
-
-# Colors
 ann_colors <- list(Group = c(Normal = "#bbffff", Tumor = "#ffb6c1"))
 
 # Annotation
