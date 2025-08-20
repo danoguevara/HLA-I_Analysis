@@ -15,6 +15,7 @@ library(scales)
 library(dplyr)
 library(tidyr)
 library(stringr)
+library(purrr)
 library(ggplot2)
 library(ggrepel)
 library(patchwork)
@@ -23,88 +24,458 @@ library(openxlsx)
 library(OmicsKit)
 ```
 
-# 2. Setup
+# 2. Setup and sample metadata
 ```{r}
-setwd("~/github/HLA-I_Analysis/splicing")
+setwd("~/Documents/SimonLab/HLA-I_Analysis/splicing")
+library_size_df <- read.csv("library_size.tsv", sep = "\t")
 
-colnames <- data.frame(label = c("51N", "57N", "59N", "63N", "148N",
-                                 "51P", "51M1", "51M2", "51M3", "57M", "59P", "59M",
-                                 "62M", "63R", "88M1", "88M2", "117M", "123M", "148P1", "148P2"),
-                       group = c(rep("Normal", 5), rep("Tumor", 15)))
+# Create metadata
+sampledata <- data.frame(id = c("RU51_N6", "RU57_N1x", "RU59_N7", "RU63_N2", "RU148_N",
+                                "RU51_P4", "RU51_M7", "RU51_M16", "RU51_M49", "RU57_M1x", "RU59_P5", "RU59_M6",
+                                "RU62_M1x", "RU63_R2", "RU88_R8", "RU88_M15", "RU117_M10", "RU123_MT", "RU148_T8", "RU148_T11"),
+                         patient_internal = c(51, 57, 59, 63, 148,
+                                              rep(51, 4), 57, rep(59, 2),
+                                              62, 63, rep(88, 2), 117, 123, rep(148, 2)),
+                         patient = c(1:3, 5, 9,
+                                     rep(1, 4), 2, rep(3, 2),
+                                     4, 5, rep(6, 2), 7, 8, rep(9, 2)),
+                         tumor = c(rep("N", 5), rep("T", 15)),
+                         tumor_type = c(rep("N", 5), "P", rep("M", 4), "P",
+                                        rep("M", 2), "R", rep("M", 4), rep("P", 2))) %>%
+  
+  mutate(patient_internal = factor(patient_internal, levels = c(51, 57, 59, 62, 63, 88, 117, 123, 148)),
+         patient = factor(patient, levels = 1:9), tumor = factor(tumor, levels = c("N", "T")),
+         tumor_type = factor(tumor_type, levels = c("N", "P", "R", "M")),
+         internal_tumor = paste0("RU", patient_internal, " ", tumor),
+         internal_type = paste0("RU", patient_internal, " ", tumor_type),
+         label_tumor = paste0("R0", patient, " ", tumor), label_type = paste0("R0", patient, " ", tumor_type))
+
+# Manage repeated labels
+sampledata[, 6:9] <- lapply(sampledata[, 6:9], function(x) {
+  ave(x, x, FUN = function(z) {
+    if (length(z) == 1) return(z)
+    paste0(z, seq_along(z))
+  })
+})
+
+# Add library size
+sampledata <- left_join(sampledata, library_size_df, by = "id")
 ```
 
-# 3. Retrieve splicing results
+# 3. Overview of splicing events
+## 3.1 Pie charts and stacked barplots
 ```{r}
-# JC model
-res.SE.JC <- read.csv("results/all_samples_variable_ind/output/SE.MATS.JC.txt", sep = "\t")
-res.SE.JC.sig <- res.SE.JC[res.SE.JC$FDR < 0.05 & abs(res.SE.JC$IncLevelDifference) >= 0.05, ]
+my_colors <- c("#F4F7AE", "#E6BDF4", "#FC9272", "#8E90D8", "#B9F1D6")
 
-res.MXE.JC <- read.csv("results/all_samples_variable_ind/output/MXE.MATS.JC.txt", sep = "\t")
-res.MXE.JC.sig <- res.MXE.JC[res.MXE.JC$FDR < 0.05 & abs(res.MXE.JC$IncLevelDifference) >= 0.05, ]
+summary_all <- read.csv("results/variable/output/summary.txt", header = TRUE, sep = "\t")
+summary_all_nov <- read.csv("results/variable_novel/output/summary.txt", header = TRUE, sep = "\t")
 
-res.RI.JC <- read.csv("results/all_samples_variable_ind/output/RI.MATS.JC.txt", sep = "\t")
-res.RI.JC.sig <- res.RI.JC[res.RI.JC$FDR < 0.05 & abs(res.RI.JC$IncLevelDifference) >= 0.05, ]
+# Stacked bar plots
+summary_all <- summary_all %>% transmute(dataset = "Canonical", event = EventTypeDescription,
+                                         Total = TotalEventsJCEC, Significant = SignificantEventsJCEC)
 
-res.A3SS.JC <- read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JC.txt", sep = "\t")
-res.A3SS.JC.sig <- res.A3SS.JC[res.A3SS.JC$FDR < 0.05 & abs(res.A3SS.JC$IncLevelDifference) >= 0.05, ]
+summary_all_nov <- summary_all_nov %>% transmute(dataset = "Novel", event = EventTypeDescription,
+                                                 Total = TotalEventsJCEC, Significant = SignificantEventsJCEC)
 
-res.A5SS.JC <- read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JC.txt", sep = "\t")
-res.A5SS.JC.sig <- res.A5SS.JC[res.A5SS.JC$FDR < 0.05 & abs(res.A5SS.JC$IncLevelDifference) >= 0.05, ]
+summary_long <- bind_rows(summary_all, summary_all_nov) %>%
+  pivot_longer(c(Total, Significant), names_to = "metric", values_to = "n") %>%
+  mutate(dataset = factor(dataset, levels = c("Canonical", "Novel")),
+         metric = factor(metric, levels = c("Total", "Significant"),
+                         labels = c("Total events", "Significant (FDR < 0.05)")),
+         event = factor(event, levels = c("skipped exon", "mutually exclusive exons", "retained intron",
+                                          "alternative 3' splice sites", "alternative 5' splice sites")))
 
-# JCEC model
-res.SE.JCEC <- read.csv("results/all_samples_variable_ind/output/SE.MATS.JCEC.txt", sep = "\t")
-res.SE.JCEC.sig <- res.SE.JCEC[res.SE.JCEC$FDR < 0.05 & abs(res.SE.JCEC$IncLevelDifference) >= 0.05, ]
+ggplot(summary_long, aes(x = dataset, y = n, fill = event)) +
+  geom_col(color = "black", linewidth = 0.1) +  theme_bw() +
+  facet_wrap(~ metric, nrow = 1, scales = "free_y") +
+  labs(x = NULL, y = "Frecuency", fill = "Splicing event") +
+  scale_y_continuous(labels = scales::comma, limits = c(0, NA), expand = expansion(mult = c(0, 0.01))) +
+  scale_fill_manual(values = my_colors, labels = c("Skipped Exon", "Mutually Exclusive Exons", "Retained Intron",
+                                                   "Alt. 3' Splice Site", "Alt. 5' Splice Site")) +
+  theme(strip.background = element_blank(),
+        strip.text = element_text(size = 16),
+        axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 16),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
 
-res.MXE.JCEC <- read.csv("results/all_samples_variable_ind/output/MXE.MATS.JCEC.txt", sep = "\t")
-res.MXE.JCEC.sig <- res.MXE.JCEC[res.MXE.JCEC$FDR < 0.05 & abs(res.MXE.JCEC$IncLevelDifference) >= 0.05, ]
 
-res.RI.JCEC <- read.csv("results/all_samples_variable_ind/output/RI.MATS.JCEC.txt", sep = "\t")
-res.RI.JCEC.sig <- res.RI.JCEC[res.RI.JCEC$FDR < 0.05 & abs(res.RI.JCEC$IncLevelDifference) >= 0.05, ]
+# Pie charts
+#source("src/nice_pie.R")
 
-res.A3SS.JCEC <- read.csv("results/all_samples_variable_ind/output/A3SS.MATS.JCEC.txt", sep = "\t")
-res.A3SS.JCEC.sig <- res.A3SS.JCEC[res.A3SS.JCEC$FDR < 0.05 & abs(res.A3SS.JCEC$IncLevelDifference) >= 0.05, ]
+# Canonical splicing events
+#p.pie.tot <- nice_pie(summary_all, selected_cols = c("EventType", "TotalEventsJCEC"), colors = my_colors) +
+#  theme(legend.position = "none")
+#p.pie.sig <- nice_pie(summary_all, selected_cols = c("EventType", "SignificantEventsJCEC"), colors = my_colors)
 
-res.A5SS.JCEC <- read.csv("results/all_samples_variable_ind/output/A5SS.MATS.JCEC.txt", sep = "\t")
-res.A5SS.JCEC.sig <- res.A5SS.JCEC[res.A5SS.JCEC$FDR < 0.05 & abs(res.A5SS.JCEC$IncLevelDifference) >= 0.05, ]
+#p.pie <- p.pie.tot + p.pie.sig
+
+# Novel splicing events
+#p.pie.tot.nov <- nice_pie(summary_all_nov, selected_cols = c("EventType", "TotalEventsJCEC"), colors = my_colors) +
+#  theme(legend.position = "none")
+#p.pie.sig.nov <- nice_pie(summary_all_nov, selected_cols = c("EventType", "SignificantEventsJCEC"), colors = my_colors)
+
+#p.pie.nov <- p.pie.tot.nov + p.pie.sig.nov
+```
+
+## 3.2. Correlation of count models [JC vs JCEC]
+```{r}
+#source("src/psi_correlation.R")
+
+#psi_correlation(df1 = res.SE.JC[res.SE.JC$ID %in% res.SE$ID, ],
+#                df2 = res.SE.JCEC[res.SE.JCEC$ID %in% res.SE$ID, ], title = "Skipped Exon")
+#psi_correlation(df1 = res.MXE.JC[res.MXE.JC$ID %in% res.MXE$ID, ],
+#                df2 = res.MXE.JCEC[res.MXE.JCEC$ID %in% res.MXE$ID, ], title = "Mutually Exclusive Exons")
+#psi_correlation(df1 = res.RI.JC[res.RI.JC$ID %in% res.RI$ID, ],
+#                df2 = res.RI.JCEC[res.RI.JCEC$ID %in% res.RI$ID, ], title = "Retained Intron")
+#psi_correlation(df1 = res.A3SS.JC[res.A3SS.JC$ID %in% res.A3SS$ID, ],
+#                df2 = res.A3SS.JCEC[res.A3SS.JCEC$ID %in% res.A3SS$ID, ], title = "Alt. 3' Splice Site")
+#psi_correlation(df1 = res.A5SS.JC[res.A5SS.JC$ID %in% res.A5SS$ID, ],
+#                df2 = res.A5SS.JCEC[res.A5SS.JCEC$ID %in% res.A5SS$ID, ], title = "Alt. 5' Splice Site")
+
+#ggsave("figures/Correlation_JC_JCEC_Skipped_Exon.jpg", width = 5.5, height = 5, dpi = 300)
+#ggsave("figures/Correlation_JC_JCEC_Mutually_Exclusive_Exons.jpg", width = 5.5, height = 5, dpi = 300)
+#ggsave("figures/Correlation_JC_JCEC_Retained_Intron.jpg", width = 5.5, height = 5, dpi = 300)
+#ggsave("figures/Correlation_JC_JCEC_Alt_3_Splice_Site.jpg", width = 5.5, height = 5, dpi = 300)
+#ggsave("figures/Correlation_JC_JCEC_Alt_5_Splice_Site.jpg", width = 5.5, height = 5, dpi = 300)
+```
+
+# 4. Managing results
+## 4.1. Read data
+```{r}
+# Annotated splicing events
+#res.SE <- read.csv("results/variable/output/SE.MATS.JCEC.txt", sep = "\t")
+#res.MXE <- read.csv("results/variable/output/MXE.MATS.JCEC.txt", sep = "\t")
+#res.RI <- read.csv("results/variable/output/RI.MATS.JCEC.txt", sep = "\t")
+#res.A3SS <- read.csv("results/variable/output/A3SS.MATS.JCEC.txt", sep = "\t")
+#res.A5SS <- read.csv("results/variable/output/A5SS.MATS.JCEC.txt", sep = "\t")
+
+# Get list of IDs
+canon_SE <- read.csv("results/variable/output/SE.MATS.JCEC.txt", sep = "\t")$ID
+canon_MXE <- read.csv("results/variable/output/MXE.MATS.JCEC.txt", sep = "\t")$ID
+canon_RI <- read.csv("results/variable/output/RI.MATS.JCEC.txt", sep = "\t")$ID
+canon_A3SS <- read.csv("results/variable/output/A3SS.MATS.JCEC.txt", sep = "\t")$ID
+canon_A5SS <- read.csv("results/variable/output/A5SS.MATS.JCEC.txt", sep = "\t")$ID
+
+# Novel splicing events
+res.SE.nov <- read.csv("results/variable_novel/output/SE.MATS.JCEC.txt", sep = "\t")
+res.MXE.nov <- read.csv("results/variable_novel/output/MXE.MATS.JCEC.txt", sep = "\t")
+res.RI.nov <- read.csv("results/variable_novel/output/RI.MATS.JCEC.txt", sep = "\t")
+res.A3SS.nov <- read.csv("results/variable_novel/output/A3SS.MATS.JCEC.txt", sep = "\t")
+res.A5SS.nov <- read.csv("results/variable_novel/output/A5SS.MATS.JCEC.txt", sep = "\t")
+```
+
+## 4.2. Counts distribution and filtering
+```{r}
+# Get Counts Per Million (Inclusion Counts for Retained Intron events)
+source("src/get_skipping_counts.R")
+
+SE.CPM <- get_skipping_counts(res.SE.nov, sampledata)
+MXE.CPM <- get_skipping_counts(res.MXE.nov, sampledata)
+RI.CPM <- get_skipping_counts(res.RI.nov, sampledata, preffix = "IJC")
+A3SS.CPM <- get_skipping_counts(res.A3SS.nov, sampledata)
+A5SS.CPM <- get_skipping_counts(res.A5SS.nov, sampledata)
+
+# Plot distributions
+source("src/nice_Hist.R")
+hist_thresholds <- c(seq(0.05, 0.25, 0.05), 0.4, 0.5)
+
+nice_Hist(SE.CPM, thresholds = hist_thresholds, xlim = 25) + labs(x = "CPM - Skipping Counts", title = "Skipped Exon")
+nice_Hist(MXE.CPM, thresholds = hist_thresholds, xlim = 25) + labs(x = "CPM - Skipping Counts", title = "Mutually Exclusive Exons")
+nice_Hist(RI.CPM, thresholds = hist_thresholds, xlim = 25) + labs(x = "CPM - Inclusion Counts", title = "Retained Intron")
+nice_Hist(A3SS.CPM, thresholds = hist_thresholds, xlim = 25) + labs(x = "CPM - Skipping Counts", title = "Alt. 3' Splice Site")
+nice_Hist(A5SS.CPM, thresholds = hist_thresholds, xlim = 25) + labs(x = "CPM - Skipping Counts", title = "Alt. 5' Splice Site")
+
+combined_hist <- rbind(SE.CPM[,23:26], MXE.CPM[,23:26], RI.CPM[,23:26], A3SS.CPM[,23:26], A5SS.CPM[,23:26])
+combined_hist$event <- c(rep("Skipped Exon", nrow(SE.CPM)),
+                         rep("Mutually Exclusive Exons", nrow(MXE.CPM)),
+                         rep("Retained Intron", nrow(RI.CPM)),
+                         rep("Alt. 3' Splice Site", nrow(A3SS.CPM)),
+                         rep("Alt. 5' Splice Site", nrow(A5SS.CPM)))
+combined_hist$event <- factor(combined_hist$event, levels = unique(combined_hist$event), ordered = T)
+
+nice_Hist(counts = combined_hist, thresholds = hist_thresholds, xlim = 25) +
+  facet_wrap(~event, scales = "free_y", nrow = 1) + xlab ("Counts Per Million") +
+  theme(strip.background = element_blank(), strip.text = element_text(size = 14))
+
+ggsave("figures/CPM_Distribution_per_Event.jpg", width = 22, height = 5, dpi = 600)
+
+cpm_threshold <- 0.25
+cts_threshold <- cpm_threshold*mean(sampledata$lib_size)/(10**6)
+
+# Filter low count events
+source("src/mean_preprocessing.R")
+
+## IJC + SJC
+#res.SE.jc <- mean_preprocessing(res.SE, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), 65)
+#res.MXE.jc <- mean_preprocessing(res.MXE, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), 65)
+#res.RI.jc <- mean_preprocessing(res.RI, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), 65)
+#res.A3SS.jc <- mean_preprocessing(res.A3SS, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), 65)
+#res.A5SS.jc <- mean_preprocessing(res.A5SS, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), 65)
+
+res.SE.nov.jc <- mean_preprocessing(res.SE.nov, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), cts_threshold)
+res.MXE.nov.jc <- mean_preprocessing(res.MXE.nov, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), cts_threshold)
+res.RI.nov.jc <- mean_preprocessing(res.RI.nov, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), cts_threshold)
+res.A3SS.nov.jc <- mean_preprocessing(res.A3SS.nov, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), cts_threshold)
+res.A5SS.nov.jc <- mean_preprocessing(res.A5SS.nov, c("IJC_SAMPLE_1", "SJC_SAMPLE_1", "IJC_SAMPLE_2", "SJC_SAMPLE_2"), cts_threshold)
+```
+
+# 3. Managing splicing results [JCEC model]
+```{r}
+# Sample type PSI
+#res.SE.psi <- mean_preprocessing(res.SE.sig, c("IncLevel1", "IncLevel2"), 0.05)
+#res.MXE.psi <- mean_preprocessing(res.MXE.sig, c("IncLevel1", "IncLevel2"), 0.05)
+#res.RI.psi <- mean_preprocessing(res.RI.sig, c("IncLevel1", "IncLevel2"), 0.05)
+#res.A3SS.psi <- mean_preprocessing(res.A3SS.sig, c("IncLevel1", "IncLevel2"), 0.05)
+#res.A5SS.psi <- mean_preprocessing(res.A5SS.sig, c("IncLevel1", "IncLevel2"), 0.05)
+
+res.SE.nov.psi <- mean_preprocessing(res.SE.nov.jc, c("IncLevel1", "IncLevel2"), 0.05)
+res.MXE.nov.psi <- mean_preprocessing(res.MXE.nov.jc, c("IncLevel1", "IncLevel2"), 0.05)
+res.RI.nov.psi <- mean_preprocessing(res.RI.nov.jc, c("IncLevel1", "IncLevel2"), 0.05)
+res.A3SS.nov.psi <- mean_preprocessing(res.A3SS.nov.jc, c("IncLevel1", "IncLevel2"), 0.05)
+res.A5SS.nov.psi <- mean_preprocessing(res.A5SS.nov.jc, c("IncLevel1", "IncLevel2"), 0.05)
+
+# Filtering FDR and Delta(PSI)
+#res.SE.sig <- res.SE.jc %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+#res.MXE.sig <- res.MXE.jc %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+#res.RI.sig <- res.RI.jc %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+#res.A3SS.sig <- res.A3SS.jc %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+#res.A5SS.sig <- res.A5SS.jc %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+
+res.SE.nov.sig <- res.SE.nov.psi %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+res.MXE.nov.sig <- res.MXE.nov.psi %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+res.RI.nov.sig <- res.RI.nov.psi %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+res.A3SS.nov.sig <- res.A3SS.nov.psi %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
+res.A5SS.nov.sig <- res.A5SS.nov.psi %>% filter(FDR < 0.01 & abs(IncLevelDifference) >= 0.05)
 
 # Final data frames
-res.SE <- res.SE.JCEC[res.SE.JCEC$ID %in% intersect(res.SE.JC$ID, res.SE.JCEC$ID), ]
-res.MXE <- res.MXE.JCEC[res.MXE.JCEC$ID %in% intersect(res.MXE.JC$ID, res.MXE.JCEC$ID), ]
-res.RI <- res.RI.JCEC[res.RI.JCEC$ID %in% intersect(res.RI.JC$ID, res.RI.JCEC$ID), ]
-res.A3SS <- res.A3SS.JCEC[res.A3SS.JCEC$ID %in% intersect(res.A3SS.JC$ID, res.A3SS.JCEC$ID), ]
-res.A5SS <- res.A5SS.JCEC[res.A5SS.JCEC$ID %in% intersect(res.A5SS.JC$ID, res.A5SS.JCEC$ID), ]
+res.SE.nov.sig$event <- "SE"
+res.MXE.nov.sig$event <- "MXE"
+res.RI.nov.sig$event <- "RI"
+res.A3SS.nov.sig$event <- "A3SS"
+res.A5SS.nov.sig$event <- "A5SS"
+
+master_SE <- rbind(res.SE.nov.sig[, c("ID", "GeneID", "geneSymbol", "SJC_SAMPLE_1", "SJC_SAMPLE_2",
+                                      "IJC_SAMPLE_1", "IJC_SAMPLE_2", "FDR", "IncLevelDifference", "event")],
+                   res.MXE.nov.sig[, c("ID", "GeneID", "geneSymbol", "SJC_SAMPLE_1", "SJC_SAMPLE_2",
+                                       "IJC_SAMPLE_1", "IJC_SAMPLE_2", "FDR", "IncLevelDifference", "event")],
+                   res.RI.nov.sig[, c("ID", "GeneID", "geneSymbol", "SJC_SAMPLE_1", "SJC_SAMPLE_2",
+                                      "IJC_SAMPLE_1", "IJC_SAMPLE_2", "FDR", "IncLevelDifference", "event")],
+                   res.A3SS.nov.sig[, c("ID", "GeneID", "geneSymbol", "SJC_SAMPLE_1", "SJC_SAMPLE_2",
+                                        "IJC_SAMPLE_1", "IJC_SAMPLE_2", "FDR", "IncLevelDifference", "event")],
+                   res.A5SS.nov.sig[, c("ID", "GeneID", "geneSymbol", "SJC_SAMPLE_1", "SJC_SAMPLE_2",
+                                        "IJC_SAMPLE_1", "IJC_SAMPLE_2", "FDR", "IncLevelDifference", "event")])
+table(master_SE$event)
+sum(table(master_SE$event))
+
+table(master_SE$event[master_SE$IncLevelDifference < 0])
+sum(table(master_SE$event[master_SE$IncLevelDifference < 0]))
+```
+
+## 3.3 Stacked bar plots of tumor-specific events
+```{r}
+source("src/get_recurrent_events.R")
+
+# Subsets of CPMs
+SE.CPM.sig <- SE.CPM %>% filter(ID %in% res.SE.nov.sig$ID[res.SE.nov.sig$IncLevelDifference < 0]) %>% mutate(event = "SE")
+MXE.CPM.sig <- MXE.CPM %>% filter(ID %in% res.MXE.nov.sig$ID[res.MXE.nov.sig$IncLevelDifference < 0]) %>% mutate(event = "MXE")
+RI.CPM.sig <- RI.CPM %>% filter(ID %in% res.RI.nov.sig$ID[res.RI.nov.sig$IncLevelDifference < 0]) %>% mutate(event = "RI")
+A3SS.CPM.sig <- A3SS.CPM %>% filter(ID %in% res.A3SS.nov.sig$ID[res.A3SS.nov.sig$IncLevelDifference < 0]) %>% mutate(event = "A3SS")
+A5SS.CPM.sig <- A5SS.CPM %>% filter(ID %in% res.A5SS.nov.sig$ID[res.A5SS.nov.sig$IncLevelDifference < 0]) %>% mutate(event = "A5SS")
+
+sig_events <- rbind(SE.CPM.sig, MXE.CPM.sig, RI.CPM.sig, A3SS.CPM.sig, A5SS.CPM.sig) |>
+  mutate(event = factor(event, levels = c("SE","MXE","RI","A3SS","A5SS"))) %>% mutate(source = "filtered")
+
+SE.CPM.rec <- get_recurrent_events(SE.CPM, res.SE.nov, sampledata, "SE")
+MXE.CPM.rec <- get_recurrent_events(MXE.CPM, res.MXE.nov, sampledata, "MXE")
+RI.CPM.rec <- get_recurrent_events(RI.CPM, res.RI.nov, sampledata, "RI")
+A3SS.CPM.rec <- get_recurrent_events(A3SS.CPM, res.A3SS.nov, sampledata, "A3SS")
+A5SS.CPM.rec <- get_recurrent_events(A5SS.CPM, res.A5SS.nov, sampledata, "A5SS")
+
+rec_events <- rbind(SE.CPM.rec, MXE.CPM.rec, RI.CPM.rec, A3SS.CPM.rec, A5SS.CPM.rec) |>
+  mutate(event = factor(event, levels = c("SE","MXE","RI","A3SS","A5SS"))) %>% mutate(source = "recurrent")
+
+all_events <- rbind(sig_events, rec_events) %>%
+  mutate(source = factor(source, levels = c("filtered", "recurrent")))
+all_events <- all_events[order(all_events$source, decreasing = F), ]
+all_events <- all_events[order(all_events$event, decreasing = F), ]
+
+res.SE.tumor <- res.SE.nov %>% filter(ID %in% all_events$ID[all_events$event == "SE"])
+res.SE.tumor <- res.SE.tumor[, c(1:11, 17:20, 23)]
+res.SE.tumor <- left_join(res.SE.tumor,
+                          all_events[all_events$event == "SE", c("ID", "event", "source")], by = "ID")
+res.SE.tumor <- res.SE.tumor %>%
+  mutate(novel = ifelse(ID %in% canon_SE, "canonical", "novel")) %>% arrange(novel, source)
+
+res.MXE.tumor <- res.MXE.nov %>% filter(ID %in% all_events$ID[all_events$event == "MXE"])
+res.MXE.tumor <- res.MXE.tumor[, c(1:13, 19:22, 25)]
+res.MXE.tumor <- left_join(res.MXE.tumor,
+                           all_events[all_events$event == "MXE", c("ID", "event", "source")], by = "ID")
+res.MXE.tumor <- res.MXE.tumor %>%
+  mutate(novel = ifelse(ID %in% canon_MXE, "canonical", "novel")) %>% arrange(novel, source)
+
+res.RI.tumor <- res.RI.nov %>% filter(ID %in% all_events$ID[all_events$event == "RI"])
+res.RI.tumor <- res.RI.tumor[, c(1:11, 17:20, 23)]
+res.RI.tumor <- left_join(res.RI.tumor,
+                          all_events[all_events$event == "RI", c("ID", "event", "source")], by = "ID")
+res.RI.tumor <- res.RI.tumor %>%
+  mutate(novel = ifelse(ID %in% canon_RI, "canonical", "novel")) %>% arrange(novel, source)
+
+res.A3SS.tumor <- res.A3SS.nov %>% filter(ID %in% all_events$ID[all_events$event == "A3SS"])
+res.A3SS.tumor <- res.A3SS.tumor[, c(1:11, 17:20, 23)]
+res.A3SS.tumor <- left_join(res.A3SS.tumor,
+                            all_events[all_events$event == "A3SS", c("ID", "event", "source")], by = "ID")
+res.A3SS.tumor <- res.A3SS.tumor %>%
+  mutate(novel = ifelse(ID %in% canon_A3SS, "canonical", "novel")) %>% arrange(novel, source)
+
+res.A5SS.tumor <- res.A5SS.nov %>% filter(ID %in% all_events$ID[all_events$event == "A5SS"])
+res.A5SS.tumor <- res.A5SS.tumor[, c(1:11, 17:20, 23)]
+res.A5SS.tumor <- left_join(res.A5SS.tumor,
+                            all_events[all_events$event == "A5SS", c("ID", "event", "source")], by = "ID")
+res.A5SS.tumor <- res.A5SS.tumor %>%
+  mutate(novel = ifelse(ID %in% canon_A5SS, "canonical", "novel")) %>% arrange(novel, source)
+
+saveRDS(res.SE.tumor, file = "results/SE_tumor_specific.rds")
+saveRDS(res.MXE.tumor, file = "results/MXE_tumor_specific.rds")
+saveRDS(res.RI.tumor, file = "results/RI_tumor_specific.rds")
+saveRDS(res.A3SS.tumor, file = "results/A3SS_tumor_specific.rds")
+saveRDS(res.A5SS.tumor, file = "results/A5SS_tumor_specific.rds")
+```
+
+[REMAKE THE FOLLOWING PLOTS] 08/20/2025
+
+## CPM barplots of shared events per samples
+```{r}
+rec_events_plot <- rec_events[rec_events$Mean.T > 10, ]
+
+sample_cols <- names(all_events)[startsWith(names(all_events), "RU")]
+
+agg <- rec_events_plot %>%
+  select(geneSymbol, event, all_of(sample_cols)) %>%
+  pivot_longer(cols = all_of(sample_cols),
+               names_to = "sample",
+               values_to = "CPM") %>%
+  mutate(CPM = suppressWarnings(as.numeric(CPM))) %>%
+  group_by(geneSymbol, event, sample) %>%
+  summarise(
+    mean_CPM = if (all(is.na(CPM))) NA_real_ else mean(CPM, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+source("src/plot_gene_bars.R")
+
+out_dir <- "plots/recurrent_gene_bars"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+genes <- unique(rec_events$geneSymbol)
+
+for (g in genes) {
+  p <- plot_gene_bars(agg, g, free_y = TRUE)  # set FALSE if you want shared y across facets
+  if (!is.null(p)) {
+    ggsave(file.path(out_dir, paste0("bars_", g, ".png")), p, width = 12, height = 4, dpi = 300)
+  }
+}
+```
+
+
+## Genes with shared event
+```{r}
+events <- list(
+  SE = unique(SE.CPM.sig$geneSymbol[SE.CPM.sig$Mean.T > 5]),
+  MXE = unique(MXE.CPM.sig$geneSymbol[MXE.CPM.sig$Mean.T > 5]),
+  RI = unique(RI.CPM.sig$geneSymbol[RI.CPM.sig$Mean.T > 5]),
+  A3SS = unique(A3SS.CPM.sig$geneSymbol[A3SS.CPM.sig$Mean.T > 5]),
+  A5SS = unique(A5SS.CPM.sig$geneSymbol[A5SS.CPM.sig$Mean.T > 5])
+)
+
+common_genes <- do.call(rbind, lapply(names(events), function(ev) {
+  data.frame(geneSymbol = events[[ev]], event = ev, stringsAsFactors = FALSE)
+}))
+
+# Data frame for stacked bar plots
+all_events <- rbind(SE.CPM.sig[SE.CPM.sig$geneSymbol %in% common_genes$geneSymbol[common_genes$event == "SE"], ],
+                    MXE.CPM.sig[MXE.CPM.sig$geneSymbol %in% common_genes$geneSymbol[common_genes$event == "MXE"], ],
+                    RI.CPM.sig[RI.CPM.sig$geneSymbol %in% common_genes$geneSymbol[common_genes$event == "RI"], ],
+                    A3SS.CPM.sig[A3SS.CPM.sig$geneSymbol %in% common_genes$geneSymbol[common_genes$event == "A3SS"], ],
+                    A5SS.CPM.sig[A5SS.CPM.sig$geneSymbol %in% common_genes$geneSymbol[common_genes$event == "A5SS"], ]) |>
+  mutate(event = factor(event, levels = c("SE","MXE","RI","A3SS","A5SS")))
+
+cpm_long <- all_events |>
+  select(geneSymbol, event, all_of(sample_cols)) |>
+  pivot_longer(cols = all_of(sample_cols),
+               names_to = "sample", values_to = "CPM")
+
+# Plot
+## Per event
+event_gene <- cpm_long |>
+  group_by(event, geneSymbol) |>
+  summarise(mean_CPM = mean(CPM, na.rm = TRUE), .groups = "drop")
+
+ggplot(event_gene, aes(x = geneSymbol, y = mean_CPM, fill = event)) +
+  geom_bar(stat = "identity", color = "black", linewidth = 0.1) +
+  scale_fill_manual(values  = my_colors) +
+  labs(x = "Gene", y = "Counts Per Million", fill = "Event") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text.y = element_text(size = 14),
+        axis.text.x = element_text(size = 14, angle = 45, hjust = 1),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
+
+## Per sample
+# Sum CPM per sample × event
+event_sample <- cpm_long %>%
+  group_by(sample, event) %>%
+  summarise(total_CPM = sum(CPM, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    # keep your preferred sample order
+    sample = factor(sample, levels = sample_cols),
+    event  = factor(event, levels = c("SE","MXE","RI","A3SS","A5SS"))
+  )
+
+# Stacked bars: x = sample, fill = event, y = total CPM across genes
+ggplot(event_sample, aes(x = sample, y = total_CPM, fill = event)) +
+  geom_col(color = "black", linewidth = 0.1) +
+  scale_fill_manual(values = my_colors) +
+  labs(x = "Sample", y = "Total Counts Per Million", fill = "Event") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text.y = element_text(size = 14),
+        axis.text.x = element_text(size = 14, angle = 45, hjust = 1),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
 ```
 
 ## 3.1 Distribution of PSI
 ```{r}
-delta_df <- rbind(res.SE[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
-                  res.MXE[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
-                  res.RI[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
-                  res.A3SS[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
-                  res.A5SS[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")])
-delta_df$event <- c(rep("Skipped Exon", nrow(res.SE)),
-                    rep("Mutually Exclusive Exons", nrow(res.MXE)),
-                    rep("Retained Intron", nrow(res.RI)),
-                    rep("Alt. 3' Splice Site", nrow(res.A3SS)),
-                    rep("Alt. 5' Splice Site", nrow(res.A5SS)))
+delta_df <- rbind(res.SE.nov[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.MXE.nov[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.RI.nov[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.A3SS.nov[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")],
+                  res.A5SS.nov[, c("ID", "GeneID", "geneSymbol", "IncLevelDifference", "FDR")])
+delta_df$event <- c(rep("Skipped Exon", nrow(res.SE.nov)),
+                    rep("Mutually Exclusive Exons", nrow(res.MXE.nov)),
+                    rep("Retained Intron", nrow(res.RI.nov)),
+                    rep("Alt. 3' Splice Site", nrow(res.A3SS.nov)),
+                    rep("Alt. 5' Splice Site", nrow(res.A5SS.nov)))
 delta_df$event <- factor(delta_df$event, levels = unique(delta_df$event))
 
 delta_df <- delta_df %>%
   mutate(sig = -log10(FDR)) %>%
   mutate(sig = if_else(is.infinite(sig), max(sig[is.finite(sig)]) + 1, sig))
 
-sig_df <- delta_df[delta_df$FDR < 0.05, ]
-sig_df <- delta_df
+sig_df <- delta_df[delta_df$FDR < 0.01, ]
 
 # Statistical analysis
-kruskal.test(IncLevelDifference ~ event, data = sig_df)
-pairwise.wilcox.test(sig_df$IncLevelDifference, sig_df$event, p.adjust.method = "BH")
-FSA::dunnTest(IncLevelDifference ~ event, data = sig_df, method = "bh")
+kruskal.test(IncLevelDifference ~ event, data = delta_df)
+pairwise.wilcox.test(delta_df$IncLevelDifference, delta_df$event, p.adjust.method = "BH")
+FSA::dunnTest(IncLevelDifference ~ event, data = delta_df, method = "bh")
 
 # Plot
 max_val <- max(delta_df$sig)
 
-ggplot(sig_df, aes(x = event, y = IncLevelDifference)) + theme_bw() +
+ggplot(sig_df[abs(sig_df$IncLevelDifference) >= 0.05, ], aes(x = event, y = IncLevelDifference)) + theme_bw() +
   geom_hline(yintercept = 0, linetype = "dashed") +
   geom_boxplot(width = 0.5, fill = "grey90", outlier.shape = NA) +
   geom_errorbar(stat = "boxplot", width = 0.7, linewidth = 0.7, color = "blue",
@@ -123,264 +494,12 @@ ggplot(sig_df, aes(x = event, y = IncLevelDifference)) + theme_bw() +
         legend.position.inside = c(0.8, 0.9),
         legend.background = element_rect(color = "black"))
 
-ggsave("figures/Delta_PSI_Distribution_Splicing_Events_FDR_0.05.jpg", width = 9, height = 6, dpi = 300)
-ggsave("figures/Delta_PSI_Distribution_Splicing_Events_FDR_0.05_PSI_0.05.jpg", width = 9, height = 6, dpi = 300)
-```
+ggsave("figures/Delta_PSI_Distribution_Splicing_Events_FDR_0.01.jpg", width = 9, height = 6, dpi = 300)
+ggsave("figures/Delta_PSI_Distribution_Splicing_Events_FDR_0.01_PSI_0.05.jpg", width = 9, height = 6, dpi = 300)
 
-## 3.2 Correlation of count models
-```{r}
-psi_correlation <- function(df1, df2, columns = c("ID", "geneSymbol", "IncLevelDifference"),
-                            title, p_size = 1, p_shape = 20, label = FALSE, cutoff = NULL)
-{
-  # Integrate data frames
-  merged_df <- merge(df1[, columns], df2[, columns],
-                     by = columns[1:2], suffixes = c("_JC", "_JCEC"))
-  
-  # Annotation position
-  x_rng <- range(merged_df$IncLevelDifference_JC, na.rm = TRUE)
-  y_rng <- range(merged_df$IncLevelDifference_JCEC, na.rm = TRUE)
-  x_pos <- x_rng[2] - 0.15 * diff(x_rng)   # 5% in from left
-  y_pos <- y_rng[1] + 0.08 * diff(y_rng)   # 5% down from top
-  
-  # Pearson correlation
-  cor_test <- cor.test(merged_df$IncLevelDifference_JC, merged_df$IncLevelDifference_JCEC, method = "pearson")
-  r_squared <- round(cor_test$estimate^2, 3)
-  
-  # Plotting
-  plot <- ggplot(merged_df, aes(x = IncLevelDifference_JC, y = IncLevelDifference_JCEC)) +
-    geom_point(alpha = 0.7, size = p_size, shape = p_shape) + theme_bw() +
-    geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
-    annotate(geom = "point", x = 0, y = 0, color = "red", fill = "white", size = p_size+1, shape = 21) +
-    annotate("text", x = x_pos, y = y_pos, label = paste0("R² = ", r_squared), size = 4, hjust = 0) +
-    labs(title = title,
-         x = expression(Delta*" PSI"*" - Junction Count"),
-         y = expression(Delta*" PSI"*" - Junction & Exon Count")) +
-    scale_x_continuous(breaks = seq(-0.8, 0.8, 0.4)) +
-    scale_y_continuous(breaks = seq(-0.8, 0.8, 0.4)) +
-    coord_cartesian(xlim = c(min(merged_df$IncLevelDifference_JC) - 0.1,
-                             max(merged_df$IncLevelDifference_JC)   + 0.1),
-                    ylim = c(min(merged_df$IncLevelDifference_JCEC) - 0.1,
-                             max(merged_df$IncLevelDifference_JCEC) + 0.1))
-  
-  if (label) {
-    label_df <- subset(merged_df, abs(IncLevelDifference_JC) >= cutoff | abs(IncLevelDifference_JCEC) >= cutoff)
-    label_df$nudge_y <- ifelse(label_df$IncLevelDifference_JCEC > label_df$IncLevelDifference_JC, 0.08, -0.08)
-    
-    plot <- plot + geom_label_repel(data = label_df, aes(label = geneSymbol), size = 3,
-                                    nudge_y = label_df$nudge_y, segment.alpha = 0.5, segment.size = 0.3,
-                                    box.padding = unit(0.4, "lines"), point.padding = unit(0.3, "lines"),
-                                    max.overlaps = Inf, show.legend = FALSE)
-  }
-    
-  return(plot)
-}
+ggsave("figures/Delta_PSI_Distribution_Novel_Splicing_Events_FDR_0.01.jpg", width = 9, height = 6, dpi = 300)
+ggsave("figures/Delta_PSI_Distribution_Novel_Splicing_Events_FDR_0.01_PSI_0.05.jpg", width = 9, height = 6, dpi = 300)
 
-psi_correlation(df1 = res.SE.JC[res.SE.JC$ID %in% res.SE$ID, ],
-                df2 = res.SE.JCEC[res.SE.JCEC$ID %in% res.SE$ID, ], title = "Skipped Exon")
-psi_correlation(df1 = res.MXE.JC[res.MXE.JC$ID %in% res.MXE$ID, ],
-                df2 = res.MXE.JCEC[res.MXE.JCEC$ID %in% res.MXE$ID, ], title = "Mutually Exclusive Exons")
-psi_correlation(df1 = res.RI.JC[res.RI.JC$ID %in% res.RI$ID, ],
-                df2 = res.RI.JCEC[res.RI.JCEC$ID %in% res.RI$ID, ], title = "Retained Intron")
-psi_correlation(df1 = res.A3SS.JC[res.A3SS.JC$ID %in% res.A3SS$ID, ],
-                df2 = res.A3SS.JCEC[res.A3SS.JCEC$ID %in% res.A3SS$ID, ], title = "Alt. 3' Splice Site")
-psi_correlation(df1 = res.A5SS.JC[res.A5SS.JC$ID %in% res.A5SS$ID, ],
-                df2 = res.A5SS.JCEC[res.A5SS.JCEC$ID %in% res.A5SS$ID, ], title = "Alt. 5' Splice Site")
-
-ggsave("figures/Correlation_JC_JCEC_Skipped_Exon.jpg", width = 5.5, height = 5, dpi = 300)
-ggsave("figures/Correlation_JC_JCEC_Mutually_Exclusive_Exons.jpg", width = 5.5, height = 5, dpi = 300)
-ggsave("figures/Correlation_JC_JCEC_Retained_Intron.jpg", width = 5.5, height = 5, dpi = 300)
-ggsave("figures/Correlation_JC_JCEC_Alt_3_Splice_Site.jpg", width = 5.5, height = 5, dpi = 300)
-ggsave("figures/Correlation_JC_JCEC_Alt_5_Splice_Site.jpg", width = 5.5, height = 5, dpi = 300)
-```
-
-## 3.3 Distribution of Counts
-```{r}
-col_annot <- colnames %>% group_by(group) %>% mutate(sample_index = row_number()) %>% ungroup()
-
-integrate_counts <- function(res, event) {
-  integrated_df <- res[, c("ID", "GeneID", "geneSymbol", "IJC_SAMPLE_1",
-                           "IJC_SAMPLE_2", "SJC_SAMPLE_1", "SJC_SAMPLE_2")] %>%
-    mutate(IJC_SAMPLE_1 = str_split(as.character(IJC_SAMPLE_1), ","),
-           IJC_SAMPLE_2 = str_split(as.character(IJC_SAMPLE_2), ","),
-           SJC_SAMPLE_1 = str_split(as.character(SJC_SAMPLE_1), ","),
-           SJC_SAMPLE_2 = str_split(as.character(SJC_SAMPLE_2), ",")) %>%
-    pivot_longer(cols = c(IJC_SAMPLE_1, IJC_SAMPLE_2, SJC_SAMPLE_1, SJC_SAMPLE_2),
-                 names_to = "level", values_to = "Counts_list") %>% unnest(Counts_list) %>%
-    group_by(ID, geneSymbol, level) %>% mutate(sample_index = row_number()) %>% ungroup() %>%
-    mutate(Counts = as.numeric(Counts_list), group = if_else(level == "IncLevel1", "Normal", "Tumor")) %>%
-    left_join(col_annot, by = c("group", "sample_index")) %>%
-    rename(sample_id = label) %>% select(ID, GeneID, geneSymbol, sample_id, group, Counts) %>%
-    mutate(event = event)
-  
-  return(integrated_df)
-}
-
-Counts.SE <- integrate_psi(res.SE.JCEC, "Skipped Exon")
-Counts.MXE <- integrate_psi(res.MXE.JCEC, "Mutually Exclusive Exons")
-Counts.RI <- integrate_psi(res.RI.JCEC, "Retained Intron")
-Counts.A3SS <- integrate_psi(res.A3SS.JCEC, "Alt. 3' Splice Site")
-Counts.A5SS <- integrate_psi(res.A5SS.JCEC, "Alt. 5' Splice Site")
-
-Counts.df <- rbind(Counts.SE, Counts.MXE, Counts.RI, Counts.A3SS, Counts.A5SS)
-
-ggplot(data = PSI.df, aes(x = group, y = PSI)) +
-  theme_bw() + facet_wrap(~event, nrow = 1) +
-  geom_boxplot(width = 0.15, fill = "grey90", outlier.shape = NA) +
-  geom_errorbar(stat = "boxplot", width = 0.4, linewidth = 1, color = "red",
-                aes(ymin = after_stat(middle), ymax = after_stat(middle))) +
-  geom_point(aes(fill = group), shape = 21, size = 3, alpha = 1,
-             show.legend = FALSE, position = position_jitter(width = 0.1)) +
-  scale_fill_manual(values = c("Normal" = "#b9ffffff", "Tumor" = "#fab8c2ff")) +
-  scale_y_continuous(breaks = function(x) seq(floor(min(x, na.rm = TRUE)),
-                                              ceiling(max(x, na.rm = TRUE)), by = 0.25)) +
-  labs(y = "Percent Spliced-In") +
-    
-    theme(strip.text = element_text(size = 17),
-          strip.background = element_blank(),
-          axis.text = element_text(size = 16),
-          axis.title.x = element_blank(),
-          axis.title.y = element_text(size = 18))
-```
-
-## 3.4 Detectable results
-```{r}
-# A) Plot counts
-nice_Hist <- function(counts, mean = "Mean", thresholds = c(seq(0, 2, 0.5), 3, 5), xlim = 50, bin = 1, ytick = 2500) {
-  levels_vector <- c(paste0("= ", thresholds[1]), paste0("<= ", thresholds[2]), paste0("<= ", thresholds[3]),
-                     paste0("<= ", thresholds[4]), paste0("<= ", thresholds[5]), paste0("<= ", thresholds[6]),
-                     paste0("<= ", thresholds[7]), paste0("> ", thresholds[7]))
-  
-  counts <- counts %>% mutate(category = case_when(.data[[mean]] == thresholds[1] ~ levels_vector[1],
-                                                   .data[[mean]] <= thresholds[2] ~ levels_vector[2],
-                                                   .data[[mean]] <= thresholds[3] ~ levels_vector[3],
-                                                   .data[[mean]] <= thresholds[4] ~ levels_vector[4],
-                                                   .data[[mean]] <= thresholds[5] ~ levels_vector[5],
-                                                   .data[[mean]] <= thresholds[6] ~ levels_vector[6],
-                                                   .data[[mean]] <= thresholds[7] ~ levels_vector[7],
-                                                   TRUE ~ levels_vector[8]))
-  
-  counts$category <- factor(counts$category, levels = levels_vector)
-  
-  fill_colors <- setNames(c("#00004F", "#6000C6", "#B3A3FF", "steelblue", "#608FE6", "#85C0FF", "grey70", "white"), levels_vector)
-  
-  plot <- ggplot(counts[counts[[mean]] <= xlim, ], aes(x = .data[[mean]], fill = category)) +
-    geom_histogram(binwidth = bin, color = "black", position = "stack") + theme_bw() +
-    xlab("Mean Normalized Counts") + ylab("Frequency") +
-    scale_x_continuous(breaks = seq(0, xlim, by = 5)) +
-    scale_y_continuous(breaks = seq(0, max(counts[[mean]]), by = ytick)) +
-    scale_fill_manual(values = fill_colors, name = "Counts") +
-    theme(strip.text = element_text(size = 14), axis.text = element_text(size = 12),
-          axis.title = element_text(size = 16), legend.title = element_text(size = 14),
-          legend.text = element_text(size = 12))
-  
-  return(plot)
-}
-
-skipping_counts <- res.SE.JCEC[, c("SJC_SAMPLE_1", "SJC_SAMPLE_2")]
-inclusion_counts <- res.SE.JCEC[, c("IJC_SAMPLE_1", "IJC_SAMPLE_2")]
-
-max(str_count(skipping_counts$SJC_SAMPLE_1, ",") + 1)
-max(str_count(skipping_counts$SJC_SAMPLE_2, ",") + 1)
-
-skipping_counts <- skipping_counts %>%
-  separate(SJC_SAMPLE_1, into = paste0("SJC_SAMPLE_1_", 1:5), sep = ",", fill = "right", convert = TRUE) %>%
-  separate(SJC_SAMPLE_2, into = paste0("SJC_SAMPLE_2_", 1:15), sep = ",", fill = "right", convert = TRUE)
-colnames(skipping_counts) <- colnames$label
-
-inclusion_counts <- inclusion_counts %>%
-  separate(IJC_SAMPLE_1, into = paste0("IJC_SAMPLE_1_", 1:5), sep = ",", fill = "right", convert = TRUE) %>%
-  separate(IJC_SAMPLE_2, into = paste0("IJC_SAMPLE_2_", 1:15), sep = ",", fill = "right", convert = TRUE)
-colnames(inclusion_counts) <- colnames$label
-
-skipping_counts$Mean.N <- rowMeans(skipping_counts[, colnames$label[colnames$group == "Normal"]])
-skipping_counts$Mean.T <- rowMeans(skipping_counts[, colnames$label[colnames$group == "Tumor"]])
-skipping_counts$Mean <- rowMeans(skipping_counts[, colnames$label])
-skipping_counts[, c("GeneID", "geneSymbol", "ID")] <- res.SE.JCEC[, c("GeneID", "geneSymbol", "ID")]
-rownames(skipping_counts) <- skipping_counts$ID
-
-inclusion_counts$Mean.N <- rowMeans(inclusion_counts[, colnames$label[colnames$group == "Normal"]])
-inclusion_counts$Mean.T <- rowMeans(inclusion_counts[, colnames$label[colnames$group == "Tumor"]])
-inclusion_counts$Mean <- rowMeans(inclusion_counts[, colnames$label])
-inclusion_counts[, c("GeneID", "geneSymbol", "ID")] <- res.SE.JCEC[, c("GeneID", "geneSymbol", "ID")]
-rownames(inclusion_counts) <- inclusion_counts$ID
-
-## Plot distributions
-nice_Hist(skipping_counts, ytick = 7500) + xlab("Skipping Counts")
-nice_Hist(inclusion_counts, , ytick = 1000) + xlab("Inclusion Counts")
-
-# B) Create detectability filter
-res.SE.JCEC.det <- res.SE.JCEC.sig[res.SE.JCEC.sig$ID %in% skipping_counts$ID[skipping_counts$Mean > 50], ]
-rownames(res.SE.JCEC.det) <- res.SE.JCEC.det$ID
-res.SE.JCEC.det$ID <- as.character(res.SE.JCEC.det$ID)
-
-detectable_ids <- c()
-for (i in res.SE.JCEC.det$ID) {
-  if (res.SE.JCEC.det[i, "IncLevelDifference"] > 0) {
-    if (skipping_counts[i, "Mean.T"] > 50) {
-      detectable_ids <- c(detectable_ids, i)
-    }
-  } else if (res.SE.JCEC.det[i, "IncLevelDifference"] < 0) {
-    if (skipping_counts[i, "Mean.N"] > 50) {
-      detectable_ids <- c(detectable_ids, i)
-    }
-  }
-}
-
-res.SE.JCEC.det <- res.SE.JCEC.det[detectable_ids, ]
-
-write.table(res.SE.JCEC.det[res.SE.JCEC.det$IncLevelDifference > 0, 2:11],
-            file = "SE_variants.txt", sep = "\t", row.names = FALSE, col.names = TRUE, quote = FALSE)
-
-```
-
-# 4. Overview of splicing events across samples
-```{r}
-nice_pie <- function(df, selected_cols = c("typeCol", "freqCol"), colors, order = FALSE, levels = NULL) {
-  # Manage data
-  pie.df <- df[, selected_cols]
-  pie.df$percent <- round(pie.df[, 2]*100/sum(pie.df[, 2]), 1)
-  pie.df$label <- paste0(pie.df[, 2], "\n", "(", pie.df$percent, "%)")
-  
-  if (order) {
-    pie.df[, 1] <- factor(pie.df[, 1], levels = levels)
-    pie.df <- pie.df[order(pie.df[, 1]), ]
-    #pie.df$label <- paste0(pie.df[, 1], "\n", pie.df[, 2], "\n", "(", pie.df$percent, "%)")
-  }
-  
-  # Plot
-  p.pie <- ggplot(pie.df, aes(x = "", y = .data[[selected_cols[2]]], fill = .data[[selected_cols[1]]])) +
-    geom_bar(stat = "identity", width = 1, color = "white") +
-    coord_polar("y", start = 0) +
-    theme_void() +
-    geom_text(aes(label = label),
-              position = position_stack(vjust = 0.5),
-              size = 4,
-              color = "black") +
-    scale_fill_manual(values = colors,
-                      labels = c("Alt. 3' Splice Sites (A3SS)", "Alt. 5' Splice Sites (A5SS)",
-                                 "Mutually Exclusive Exons (MXE)", "Retained Intron (RI)", "Skipped Exon (SE)")) +
-    guides(fill = guide_legend(title = "Splicing Event")) +
-    theme(legend.title = element_text(size = 16, face = "bold"),
-          legend.text = element_text(size = 14))
-  
-  return(p.pie)
-}
-my_colors <- c("#F4F7AE", "#E6BDF4", "#FC9272", "#8E90D8", "#B9F1D6")
-
-summary_all <- data.frame(read.csv("results/all_samples_variable_ind/output/summary.txt", header = TRUE, sep = "\t"))
-
-# Plotting summaries
-p.pieJC.tot <- nice_pie(summary_all, selected_cols = c("EventType", "TotalEventsJC"), colors = my_colors) +
-  theme(legend.position = "none")
-p.pieJC.sig <- nice_pie(summary_all, selected_cols = c("EventType", "SignificantEventsJC"), colors = my_colors)
-
-p.pieJC <- p.pieJC.tot + p.pieJC.sig
-
-p.pieJCEC.tot <- nice_pie(summary_all, selected_cols = c("EventType", "TotalEventsJCEC"), colors = my_colors) +
-  theme(legend.position = "none")
-p.pieJCEC.sig <- nice_pie(summary_all, selected_cols = c("EventType", "SignificantEventsJCEC"), colors = my_colors)
-
-p.pieJCEC <- p.pieJCEC.tot + p.pieJCEC.sig
 ```
 
 # 5. Volcano plots

@@ -5,6 +5,8 @@
 # Session Data files
 .RData
 .RDataTmp
+*.RData_splicing
+*.RData_peptides
 
 # User-specific files
 .Ruserdata
@@ -54,4 +56,5 @@ rsconnect/
 # Ignore splicing results
 splicing/results/
 splicing/figures/
+splicing/plots/
 *.gtf

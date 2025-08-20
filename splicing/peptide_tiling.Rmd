@@ -24,8 +24,11 @@ txdb <- makeTxDbFromGFF("GRCh38.103.gtf", format="gtf")
 
 # 3. Generate translated peptides
 ```{r}
-SE.JCEC.df <- read.csv("results/all_samples_variable_ind/output/SE.MATS.JCEC.txt", sep = "\t")
-SE.JCEC.df <- SE.JCEC.df[SE.JCEC.df$geneSymbol == "SLC7A2" & SE.JCEC.df$FDR < 0.05, ]
+SE_events <- readRDS("results/SE_tumor_specific.rds")
+MXE_events <- readRDS("results/MXE_tumor_specific.rds")
+RI_events <- readRDS("results/RI_tumor_specific.rds")
+A3SS_events <- readRDS("results/A3SS_tumor_specific.rds")
+A5SS_events <- readRDS("results/A5SS_tumor_specific.rds")
 
 # Build skipped isoform
 up <- GRanges("chr18", IRanges(start=upstreamES+1, end=upstreamEE), strand=strand)
@@ -45,7 +48,6 @@ txs <- transcriptsBy(txdb, by="gene")[["ENSG00000003989"]]
 tx_chosen <- txs[which(txs %over% se_range)]
 
 original_form <- IRanges(unlist(strsplit(tx_chose$ranges[1], "-"))[1]+1, unlist(strsplit(tx_chose$ranges[1], "-"))[2])
-splicing_form <- 
 ```
 
 # 4. Tile across splicing junctions
