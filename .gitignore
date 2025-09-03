@@ -58,3 +58,4 @@ splicing/results/
 splicing/figures/
 splicing/plots/
 *.gtf
+*.rds

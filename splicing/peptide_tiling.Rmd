@@ -15,6 +15,7 @@ library(GenomicFeatures)
 library(BSgenome.Hsapiens.UCSC.hg38)
 library(Biostrings)
 library(GenomicRanges)
+library(GenomeInfoDb)
 ```
 
 # 2. Build Reference
@@ -50,9 +51,46 @@ tx_chosen <- txs[which(txs %over% se_range)]
 original_form <- IRanges(unlist(strsplit(tx_chose$ranges[1], "-"))[1]+1, unlist(strsplit(tx_chose$ranges[1], "-"))[2])
 ```
 
-# 4. Tile across splicing junctions
+## Test with canonical sequences
 ```{r}
+test_data <- SE_events[SE_events$novel != "novel", ]
 
+chr_value <- (test_data$chr[1])
+```
+
+
+# 4. Generate peptides
+## 4.1. Manage database
+```{r}
+seqlevelsStyle(txdb) <- "UCSC"
+
+## Precompute structures & a gene→transcripts map (once)
+exons_by_tx <- exonsBy(txdb, by = "tx", use.names = TRUE)
+cds_by_tx   <- cdsBy(txdb,   by = "tx", use.names = TRUE)
+gene2tx <- unique(select(txdb,
+                         keys    = unique(SE_events$GeneID),
+                         keytype = "GENEID",
+                         columns = c("GENEID","TXNAME")))
+txs_by_gene <- split(gene2tx$TXNAME, gene2tx$GENEID)
+```
+
+## 4.2. Functions
+```{r}
+## Longest-ORF finder for novel events
+source("src/longest_orf_peptide.R")
+
+## Fix rank events
+source("src/fix_consecutive_rank.R")
+
+## Core: build skipped-isoform cDNA and peptide per event, branching on $novel
+source("src/make_skip_iso_peptides.R")
+```
+
+## 4.3. Extract isoforms
+```{r}
+skip_iso_results <- do.call(rbind, lapply(seq_len(nrow(SE_events)), function(i)
+  make_skip_iso_peptides(SE_events[i, ]))
+  )
 ```
 
 
